@@ -4,7 +4,7 @@ import { computed } from 'vue'
 const props = defineProps({
   modelValue: { type: [String, Number], default: null },
   plots: { type: Object, required: true },
-  title: { type: String, default: 'Bestandsflächen' },
+  title: { type: String, default: 'Beobachtungsflächen' },
   columns: { type: Number, default: 5 },
   color: { type: String, default: 'green-darken-2' }
 })
