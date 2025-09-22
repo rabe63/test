@@ -1,4 +1,5 @@
 <script setup>
+// v13
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import * as echarts from 'echarts'
 import PlotSelect from './PlotSelect.vue'
@@ -26,8 +27,17 @@ const selectedPlot = ref(String(props.defaultPlot || '1203'))
 const selectedVariable = ref('WC') // 'WC' | 'ST' | 'MP'
 const selectedSensorCodes = ref([]) // z. B. ['BF_010']
 
-// Sensorliste für aktuellen Plot+Variable
-const sensorRows = ref([])
+// Alle Sensor-Metadaten einmalig laden und lokal filtern
+const allSensors = ref([])
+
+// Sensorliste für aktuellen Plot+Variable (Client-Filter)
+const sensorRows = computed(() => {
+  if (!allSensors.value.length || !selectedPlot.value || !selectedVariable.value) return []
+  const plotNum = Number(selectedPlot.value)
+  return allSensors.value.filter(r =>
+    Number(r.code_plot) === plotNum && String(r.code_variable) === String(selectedVariable.value)
+  )
+})
 const availableSensorCodes = computed(() => {
   const set = new Set()
   for (const r of sensorRows.value) if (r?.sensor_code) set.add(String(r.sensor_code))
@@ -96,11 +106,11 @@ function onWindowResize(){
   }
 }
 
-// Variable-Checkboxen (Single-Select Verhalten) – Labels ohne Kürzel
+// Variable-Checkboxen (Single-Select Verhalten)
 const variableOptions = [
-  { code: 'WC', label: 'Bodenfeuchte', icon: 'mdi-water-percent' },      // Feuchte
-  { code: 'ST', label: 'Bodentemperatur', icon: 'mdi-thermometer' },     // Temperatur
-  { code: 'MP', label: 'Bodensaugspannung', icon: 'mdi-gauge' }          // Druck/Saugspannung
+  { code: 'WC', label: 'Bodenfeuchte', icon: 'mdi-water-percent' },
+  { code: 'ST', label: 'Bodentemperatur', icon: 'mdi-thermometer' },
+  { code: 'MP', label: 'Bodensaugspannung', icon: 'mdi-gauge' }
 ]
 const variableLabel = computed(() =>
   variableOptions.find(o => o.code === selectedVariable.value)?.label || selectedVariable.value
@@ -110,34 +120,34 @@ function onToggleVariable(code, checked) {
   selectedVariable.value = code
 }
 
-// Farbpaletten (kontraststark)
-const BASE_COLORS_LIGHT = [
-  '#e3f2fd', // sehr hell
-  '#bbdefb',
-  '#90caf9',
-  '#64b5f6',
-  '#42a5f5',
-  '#2196f3',
-  '#1e88e5',
-  '#1976d2',
-  '#1565c0',
-  '#0d47a1', // sehr dunkel
-  '#82b1ff'  // Reserve
+/**
+ * Farbkonzept:
+ * - Feste Zuordnung je Tiefenstufe (Sensorcode, z. B. BF_010) aus farbenblindheitsfreundlicher Palette.
+ * - Mehrere Sensoren in derselben Tiefe: HSL-Varianten abgeschwächt (Light-Theme dunkler, Dark-Theme heller), Schritt=3.
+ * - Zuordnung bleibt stabil bis Plot- oder Variablenwechsel (nicht abhängig von aktueller Auswahl).
+ */
+
+// Palette: Colorblind-safe Vivid
+const DEPTH_PALETTE = [
+  '#0072B2', // blue   -> BF_010
+  '#E69F00', // orange -> BF_020
+  '#009E73', // green  -> BF_030
+  '#D55E00', // vermillion -> BF_040
+  '#CC79A7', // purple -> BF_060
+  '#56B4E9', // sky blue
+  '#F0E442', // yellow
+  '#2C3E50', // navy
+  '#1ABC9C', // teal
+  '#3D5B2D', // olive
+  '#E91E63'  // pink
 ]
-const BASE_COLORS_DARK = [
-  '#b3cfff', // sehr hell
-  '#82b1ff',
-  '#448aff',
-  '#2979ff',
-  '#2962ff',
-  '#1565c0',
-  '#0d47a1',
-  '#174ea6',
-  '#1a237e',
-  '#283593',
-  '#304ffe'  // Reserve
+
+// Gewünschte feste Code-Reihenfolge für bekannte Tiefenstufen (weitere folgen danach)
+const DEPTH_CODE_ORDER = [
+  'BF_010', 'BF_020', 'BF_030', 'BF_040', 'BF_060'
 ]
-function hashCode(str){ let h=0; for (let i=0;i<str.length;i++){ h=((h<<5)-h)+str.charCodeAt(i); h|=0 } return Math.abs(h) }
+
+// HEX <-> HSL
 function hexToHsl(hex) {
   let h = hex.replace('#', '')
   if (h.length === 3) h = h.split('').map(c => c + c).join('')
@@ -145,19 +155,20 @@ function hexToHsl(hex) {
   const g = parseInt(h.slice(2,4),16)/255
   const b = parseInt(h.slice(4,6),16)/255
   const max = Math.max(r,g,b), min = Math.min(r,g,b)
-  let h2, s, l = (max + min) / 2
-  if (max === min) { h2 = s = 0 }
-  else {
+  let hh, s, l = (max + min) / 2
+  if (max === min) {
+    hh = s = 0
+  } else {
     const d = max - min
     s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
     switch (max) {
-      case r: h2 = (g - b) / d + (g < b ? 6 : 0); break
-      case g: h2 = (b - r) / d + 2; break
-      case b: h2 = (r - g) / d + 4; break
+      case r: hh = (g - b) / d + (g < b ? 6 : 0); break
+      case g: hh = (b - r) / d + 2; break
+      case b: hh = (r - g) / d + 4; break
     }
-    h2 /= 6
+    hh /= 6
   }
-  return { h: h2*360, s: s*100, l: l*100 }
+  return { h: hh*360, s: s*100, l: l*100 }
 }
 function hslToHex(h,s,l) {
   h /= 360; s /= 100; l /= 100
@@ -167,22 +178,58 @@ function hslToHex(h,s,l) {
   const r = Math.round(hue2rgb(p,q,h+1/3)*255)
   const g = Math.round(hue2rgb(p,q,h)*255)
   const b = Math.round(hue2rgb(p,q,h-1/3)*255)
-  const toHex = (x)=>x.toString(16).padStart(2,'0')
+  const toHex = (x)=>x.toString(16).toUpperCase().padStart(2,'0')
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`
 }
-function varyColor(hex, idx, darkMode) {
-  // Varianten: im Light-Theme dunkler, im Dark-Theme heller
+
+// Variante innerhalb einer Tiefe: “abgeschwächt”
+function varyWithinDepth(hex, variantIdx, isDarkTheme) {
   const { h, s, l } = hexToHsl(hex)
-  const delta = Math.min(18, 10 + 6*idx)
-  const newL = Math.max(8, Math.min(92, darkMode ? (l + delta) : (l - delta)))
-  return hslToHex(h, s, newL)
+  const step = 3 // feinere Abstufung
+  const satFactor = Math.pow(0.92, Math.max(0, variantIdx))
+  const newL = isDarkTheme ? Math.min(90, l + step * variantIdx)
+                           : Math.max(10, l - step * variantIdx)
+  const newS = Math.max(20, s * satFactor)
+  return hslToHex(h, newS, newL)
 }
-function baseColorFor(sensorCode, variantIndex=0) {
-  const palette = isDark.value ? BASE_COLORS_DARK : BASE_COLORS_LIGHT
-  const idx = hashCode(sensorCode) % palette.length
-  const base = palette[idx]
-  if (variantIndex <= 0) return base
-  return varyColor(base, variantIndex, isDark.value)
+
+// STABILE Farbreferenz je Plot/Variable basierend auf Sensorcode (BF_010, …)
+const codeOrder = ref([])                 // sortierte Liste der Codes (Tiefenstufen)
+const codeToInstOrder = ref(new Map())    // Code -> sortierte Liste der Instrumente (alle in diesem Plot/Variable)
+const codeBaseColorMap = ref(new Map())   // Code -> Basisfarbe aus DEPTH_PALETTE
+
+function recomputeCodeMaps() {
+  const rows = sensorRows.value || []
+  const presentCodes = Array.from(new Set(rows.map(r => String(r.sensor_code)))).filter(Boolean)
+
+  // 1) Reihenfolge: erst bekannte Codes in definierter Reihenfolge, dann übrige alphabetisch
+  const knownInPresent = DEPTH_CODE_ORDER.filter(c => presentCodes.includes(c))
+  const remaining = presentCodes.filter(c => !DEPTH_CODE_ORDER.includes(c)).sort()
+  const finalOrder = [...knownInPresent, ...remaining]
+  codeOrder.value = finalOrder
+
+  // 2) Instrumentreihenfolge je Code stabil
+  const instMap = new Map()
+  for (const code of finalOrder) {
+    const insts = rows
+      .filter(r => String(r.sensor_code) === code)
+      .map(r => Number(r.instrument_seq_nr))
+    instMap.set(code, Array.from(new Set(insts)).sort((a,b)=>a-b))
+  }
+  codeToInstOrder.value = instMap
+
+  // 3) Feste Farbzuteilung (bekannte Codes auf erste Palettenplätze)
+  const colorMap = new Map()
+  for (const code of knownInPresent) {
+    const i = DEPTH_CODE_ORDER.indexOf(code)
+    colorMap.set(code, DEPTH_PALETTE[i % DEPTH_PALETTE.length])
+  }
+  let nextIdx = knownInPresent.length
+  for (const code of remaining) {
+    colorMap.set(code, DEPTH_PALETTE[nextIdx % DEPTH_PALETTE.length])
+    nextIdx++
+  }
+  codeBaseColorMap.value = colorMap
 }
 
 // Hilfsfunktionen
@@ -287,31 +334,38 @@ function downloadChartPNG(){
   } catch(e){ console.error('PNG Export fehlgeschlagen', e) }
 }
 
-// 1) Sensorliste laden und Default: erster verfügbarer Code
-async function fetchSensors() {
-  sensorRows.value = []; selectedSensorCodes.value = []
-  if (!selectedPlot.value || !selectedVariable.value) return
+// Einmaliger Sensor-Metadaten-Load (ca. 550 Zeilen)
+async function fetchAllSensorsOnce() {
+  if (allSensors.value.length) return
   try {
     const { data, error } = await supabase
       .schema(props.sensorSchema)
       .from(props.sensorView)
       .select('code_plot,instrument_seq_nr,code_location,code_variable,vertikal,unit,sensor_code')
-      .eq('code_plot', Number(selectedPlot.value))
-      .eq('code_variable', selectedVariable.value)
       .order('sensor_code', { ascending: true })
       .order('instrument_seq_nr', { ascending: true })
     if (error) throw error
-    sensorRows.value = data || []
-    const codes = availableSensorCodes.value
-    if (codes.length) selectedSensorCodes.value = [codes[0]]
-    else selectedSensorCodes.value = []
+    allSensors.value = data || []
   } catch (e) {
-    console.error('[fetchSensors] error', e)
-    sensorRows.value = []; selectedSensorCodes.value = []
+    console.error('[fetchAllSensorsOnce] error', e)
+    allSensors.value = []
   }
 }
 
-// 2) Zeitreihe laden, X-Achse/Serien bauen, Chart rendern
+// Defaultauswahl je Plot/Variable sicherstellen
+function ensureDefaultSensorSelection() {
+  const codes = availableSensorCodes.value
+  if (!codes.length) {
+    selectedSensorCodes.value = []
+    return
+  }
+  // Wenn Auswahl leer oder nicht mehr gültig -> ersten Code wählen
+  if (!selectedSensorCodes.value.length || !codes.includes(selectedSensorCodes.value[0])) {
+    selectedSensorCodes.value = [codes[0]]
+  }
+}
+
+// Zeitreihen laden, Farben pro (Code=Tiefe) vergeben, Chart rendern
 async function fetchSeries() {
   rawSeries.value = []; xAxisData.value = []; seriesData.value = []; yearLabelIndexSet.value = new Set()
 
@@ -320,12 +374,10 @@ async function fetchSeries() {
     return
   }
 
-  // Instrumente zu den gewählten sensor_code
-  const instruments = sensorRows.value
-    .filter(r => selectedSensorCodes.value.includes(String(r.sensor_code)))
-    .map(r => Number(r.instrument_seq_nr))
-  const instSet = Array.from(new Set(instruments)).sort((a,b)=>a-b)
-  if (!instSet.length) { await nextTick(); await ensureChart(); await renderChart(true); return }
+  // Reihen je aktuell ausgewähltem Sensorcode
+  const selectedRows = sensorRows.value.filter(r => selectedSensorCodes.value.includes(String(r.sensor_code)))
+  const instSet = new Set(selectedRows.map(r => Number(r.instrument_seq_nr)))
+  if (!instSet.size) { await nextTick(); await ensureChart(); await renderChart(true); return }
 
   try {
     isLoading.value = true; errorMessage.value = ''
@@ -341,7 +393,7 @@ async function fetchSeries() {
       .select(`code_plot,instrument_seq_nr,code_variable,date_observation,${valueSelect}`)
       .eq('code_plot', Number(selectedPlot.value))
       .eq('code_variable', selectedVariable.value)
-      .in('instrument_seq_nr', instSet)
+      .in('instrument_seq_nr', Array.from(instSet))
       .order('instrument_seq_nr', { ascending: true })
       .order('date_observation', { ascending: true })
     if (error) throw error
@@ -374,36 +426,57 @@ async function fetchSeries() {
       for (const [instrument, idx] of idxMap.entries()) labelIndexMap.set(`${code}-${instrument}`, idx)
     }
 
-    // Serien je Instrument
+    // Serien in stabiler Legendenreihenfolge: nach Code (Tiefenstufe) und darin Instrumente
     const seriesList = []
-    for (const inst of instSet) {
-      const sensorRow = sensorRows.value.find(r => Number(r.instrument_seq_nr) === Number(inst))
-      const sensorCode = sensorRow?.sensor_code ? String(sensorRow.sensor_code) : String(inst)
-      const displayIdx = labelIndexMap.get(`${sensorCode}-${inst}`) || 1
-      const name = `${sensorCode} (${displayIdx})`
-      const color = baseColorFor(sensorCode, displayIdx-1)
+    const seenKeys = new Set() // defensiv gegen doppelte Daten
+    for (const code of codeOrder.value) {
+      const instsInCode = codeToInstOrder.value.get(code) || []
+      for (const inst of instsInCode) {
+        if (!instSet.has(inst)) continue // nur aktuell ausgewählte Instrumente
 
-      const points = rawSeries.value.filter(r => Number(r.instrument_seq_nr) === Number(inst))
-      const byDate = new Map(points.map(p => [String(p.date_observation), Number(p[props.seriesValueColumn])]))
-      const dataArr = dates.map(d => {
-        const v = byDate.get(d)
-        return (v==null || Number.isNaN(v)) ? null : v
-      })
+        // STABIL: passenden Row gezielt nach code+inst suchen (verhindert falsche Zuordnung)
+        const sensorRow = selectedRows.find(r =>
+          String(r.sensor_code) === code && Number(r.instrument_seq_nr) === Number(inst)
+        )
+        if (!sensorRow) continue
 
-      seriesList.push({
-        name,
-        type:'line',
-        data: dataArr,
-        symbol:'circle',
-        symbolSize:3,
-        showSymbol:false,
-        connectNulls:false,
-        lineStyle:{ width:1, color },
-        itemStyle:{ color, borderColor: color },
-        // Hover über Legende: diese Serie betonen, andere dimmen
-        emphasis: { focus: 'series', lineStyle: { width: 2 } },
-        blur: { lineStyle: { color: '#bbb', width: 1 }, itemStyle: { color: '#bbb', borderColor: '#bbb' } }
-      })
+        const key = `${code}|${inst}`
+        if (seenKeys.has(key)) continue
+        seenKeys.add(key)
+
+        const sensorCode = String(sensorRow.sensor_code)
+        const displayIdx = labelIndexMap.get(`${sensorCode}-${inst}`) || 1
+        const name = `${sensorCode} (${displayIdx})`
+
+        // Feste Farbzuweisung: Basis pro Code, Variante pro Instrument-Index innerhalb Code
+        const base = codeBaseColorMap.value.get(code) || DEPTH_PALETTE[0]
+        const variantIdx = Math.max(0, instsInCode.indexOf(Number(inst)))
+        const color = varyWithinDepth(base, variantIdx, isDark.value)
+
+        const points = rawSeries.value.filter(r => Number(r.instrument_seq_nr) === Number(inst))
+        const byDate = new Map(points.map(p => [String(p.date_observation), Number(p[props.seriesValueColumn])]))
+        const dataArr = dates.map(d => {
+          const v = byDate.get(d)
+          return (v==null || Number.isNaN(v)) ? null : v
+        })
+
+        seriesList.push({
+          id: `series-${sensorCode}-${inst}`, // stabil und eindeutig pro Serie
+          name,
+          type:'line',
+          color, // Top-Level, damit Legende exakt passt
+          data: dataArr,
+          symbol:'circle',
+          symbolSize:3,
+          showSymbol:false,
+          connectNulls:false,
+          lineStyle:{ width:1, color },
+          itemStyle:{ color, borderColor: color },
+          emphasis: { focus: 'series', lineStyle: { width: 2 } },
+          blur: { lineStyle: { color: '#bbb', width: 1 }, itemStyle: { color: '#bbb', borderColor: '#bbb' } },
+          legendHoverLink: true
+        })
+      }
     }
 
     seriesData.value = seriesList
@@ -418,6 +491,21 @@ async function fetchSeries() {
   } finally { isLoading.value = false }
 }
 
+// Serie-Hover über Legende für abgewählte Items deaktivieren (minimaler Update, Farben unangetastet)
+function syncLegendHoverLinks() {
+  if (!myChart) return
+  const opt = myChart.getOption()
+  const selectedMap = opt?.legend?.[0]?.selected || {}
+  const seriesOpt = opt?.series || []
+  const updates = seriesOpt.map(s => ({
+    id: s.id || s.name,
+    legendHoverLink: selectedMap[s.name] !== false
+  }))
+  if (updates.length) {
+    myChart.setOption({ series: updates }, false, true)
+  }
+}
+
 // Chart
 function onLegendSelectChanged() {
   // Nach Ein-/Ausblenden Y-Achse dynamisch justieren
@@ -425,6 +513,8 @@ function onLegendSelectChanged() {
   if (myChart && (yb.min != null || yb.max != null)) {
     myChart.setOption({ yAxis: { min: yb.min ?? null, max: yb.max ?? null } }, false, true)
   }
+  // Hover-Reaktion für abgewählte Serien deaktivieren (Farben bleiben)
+  syncLegendHoverLinks()
 }
 async function ensureChart() {
   if (!chartContainer.value) return
@@ -475,10 +565,9 @@ async function renderChart(resetZoomOnFirst=false) {
     legend: {
       top: isMobile?60:70, type:'scroll', icon:'circle', itemWidth:16, itemHeight:10,
       inactiveColor:'#bbb', textStyle:{ fontSize:isMobile?10:12 },
+      // Legendenreihenfolge entspricht der Series-Reihenfolge (nach Code, dann Instrument)
       data: seriesData.value.map(s=>s.name),
-      selectedMode:true,
-      // Hover-Link aktiv lassen: ECharts triggert emphasis/blur automatisch
-      // hoverLink ist standardmäßig true
+      selectedMode:true
     },
     tooltip: {
       trigger:'axis', axisPointer:{ type:'cross' },
@@ -528,9 +617,12 @@ async function renderChart(resetZoomOnFirst=false) {
         showDetail: false
       }
     ],
-    // Serien mit emphasis/blur (Hover auf Legende dimmt andere automatisch)
+    // Serien (inkl. Top-Level-Farbe) – sorgt dafür, dass Legenden-Symbole exakt matchen
     series: seriesData.value
   }, true)
+
+  // Nach dem Setzen der Optionen: Hover nur für ausgewählte Serien erlauben
+  syncLegendHoverLinks()
 
   if (resetZoomOnFirst) {
     setTimeout(()=> {
@@ -548,13 +640,15 @@ async function renderChart(resetZoomOnFirst=false) {
 // Watches
 watch([selectedPlot, selectedVariable], async () => {
   savedZoom.value = tryLoadZoom()
-  selectedSensorCodes.value = [] // wird in fetchSensors auf den ersten Code gesetzt
-  await fetchSensors()
+  // STABILE Farbkarten je Plot/Variable neu berechnen (nicht abhängig von Auswahl)
+  recomputeCodeMaps()
+  ensureDefaultSensorSelection()
   await nextTick(); await ensureChart()
   await fetchSeries()
 })
+
+// Bei Änderung der Sensor-Auswahl: Reihenfolge/Farben bleiben stabil (Maps bleiben unverändert)
 watch(selectedSensorCodes, async (nv, ov) => {
-  // Hinzufügen => reload; Abwählen => nur Serien herausfiltern
   const prev = new Set(ov || [])
   const next = new Set(nv || [])
   const added = [...next].filter(c => !prev.has(c))
@@ -585,7 +679,11 @@ onMounted(async () => {
   await renderChart(true)
 
   savedZoom.value = tryLoadZoom()
-  await fetchSensors()
+
+  // Einmalig alle Sensoren laden und dann lokal filtern
+  await fetchAllSensorsOnce()
+  recomputeCodeMaps()        // initiale Farbreferenz setzen (stabil je Plot/Variable)
+  ensureDefaultSensorSelection()
   await fetchSeries()
 })
 onBeforeUnmount(() => {
@@ -612,26 +710,26 @@ defineExpose({ downloadCSV, downloadChartPNG })
     <v-card elevation="1" class="mb-3">
       <v-card-title class="pb-2 title-row soft-green">Sensorengruppe</v-card-title>
       <v-card-text>
-            <div class="vars-row">
-            <div class="vars-grid">
-                    <v-checkbox
-                    v-for="opt in variableOptions"
-                    :key="opt.code"
-                    :label="opt.label"
-                    :model-value="selectedVariable === opt.code"
-                    color="green-darken-2"
-                    density="compact"
-                    hide-details
-                    @update:model-value="(val) => onToggleVariable(opt.code, val)"
-                    >
-                    <template #prepend>
-                        <v-icon class="mr-2" :color="selectedVariable === opt.code ? 'green-darken-2' : 'grey'">
-                        {{ opt.icon }}
-                        </v-icon>
-                    </template>
-                    </v-checkbox>
-            </div>
-            </div>
+        <div class="vars-row">
+          <div class="vars-grid">
+            <v-checkbox
+              v-for="opt in variableOptions"
+              :key="opt.code"
+              :label="opt.label"
+              :model-value="selectedVariable === opt.code"
+              color="green-darken-2"
+              density="compact"
+              hide-details
+              @update:model-value="(val) => onToggleVariable(opt.code, val)"
+            >
+              <template #prepend>
+                <v-icon class="mr-2" :color="selectedVariable === opt.code ? 'green-darken-2' : 'grey'">
+                  {{ opt.icon }}
+                </v-icon>
+              </template>
+            </v-checkbox>
+          </div>
+        </div>
 
         <div class="sensors-block">
           <v-card-title class="pb-2 title-row soft-green">
@@ -698,7 +796,7 @@ defineExpose({ downloadCSV, downloadChartPNG })
 .sensors-grid {
   display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 6px 12px; padding-left: 20px;
 }
-.muted { color: #777; font-weight: 400; font-size: 90%; padding-left: 20px; }
+.muted { color: #777; font-weight: 400; font-size: 90%; }
 .toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; }
 /* Card-Farben (soft green) */
 .soft-card {
