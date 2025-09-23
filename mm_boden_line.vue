@@ -735,6 +735,7 @@ defineExpose({ downloadCSV, downloadChartPNG })
           <v-card-title class="pb-2 title-row soft-green">
             Sensoren <span style="font-size:0.8em; font-weight:normal;">(Mehrfachauswahl)</span>
             <span v-if="currentUnit" class="muted">Einheit: {{ currentUnit }}</span>
+            <span style="font-size: 0.8em; float: right;">Tiefenstufen: 010 - Sonde in 10cm Tiefe</span>
           </v-card-title>
 
           <div v-if="availableSensorCodes.length" class="sensors-grid">
@@ -796,7 +797,7 @@ defineExpose({ downloadCSV, downloadChartPNG })
 .sensors-grid {
   display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 6px 12px; padding-left: 20px;
 }
-.muted { color: #777; font-weight: 400; font-size: 90%; }
+.muted { color: #777; font-weight: 400; font-size: 90%; padding-left: 10px;}
 .toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; }
 /* Card-Farben (soft green) */
 .soft-card {
