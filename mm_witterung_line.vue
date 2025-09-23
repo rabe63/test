@@ -1,13 +1,14 @@
 <script setup>
 // v13 – Witterungsdaten (Line-/Area-Chart mit Min/Mean/Max-Band)
 // Update:
-// - Band zeigt nun auch bei negativen Werten (stackStrategy: 'all').
-// - Tooltip: zeigt nur Sensoren/Werte mit echten Zahlen (keine leeren Gruppen).
-// - Mean am kräftigsten, Min/Max leicht abgeschwächt (Opacity reduziert).
+// - Luftdruck entfernt.
+// - RH: Y-Achse auf 0..100 begrenzt.
+// - WD/ET/PR/TF: Min/Max (Band/Serien) unterdrückt, auch in Tooltip & CSV.
+// - Tooltip: Reihenfolge max/mean/min, nur reale Werte anzeigen.
 
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import * as echarts from 'echarts'
-import PlotSelect from './PlotSelect.vue' // Plots wie in PlotSelect.vue
+import PlotSelect from './PlotSelect.vue'
 import { plotsData } from './data/treeSpeciesData.js'
 
 // Supabase
@@ -30,6 +31,23 @@ const selectedPlot = ref(String(props.defaultPlot || '1203'))
 const selectedLocation = ref('F') // 'S' Bestand, 'F' Freifläche (Default: Freifläche)
 const selectedVariable = ref('AT') // Standardvariable
 const selectedSensorCodes = ref([]) // Multi-Select
+
+// FF: Plots ohne Freifläche (ausblenden)
+const FF_EXCLUDED_PLOTS = new Set(['1207', '1209'])
+const displayedPlots = computed(() => {
+  if (selectedLocation.value !== 'F') return plotsData
+  const out = {}
+  for (const [k, v] of Object.entries(plotsData)) {
+    if (!FF_EXCLUDED_PLOTS.has(String(k))) out[k] = v
+  }
+  return out
+})
+function ensurePlotAllowedForLocation() {
+  if (selectedLocation.value === 'F' && FF_EXCLUDED_PLOTS.has(String(selectedPlot.value))) {
+    const keys = Object.keys(displayedPlots.value)
+    if (keys.length) selectedPlot.value = keys[0]
+  }
+}
 
 // Sensor-Metadaten (einmalig)
 const allSensors = ref([])
@@ -64,6 +82,7 @@ const errorMessage = ref('')
 
 // Legendengruppen (ein Eintrag pro Sensor)
 const legendGroupNames = ref([]) // in Reihenfolge (Code -> Instrument)
+const groupMeta = ref(new Map()) // groupName -> {hasMin:boolean, hasMax:boolean}
 
 // X-Achse: Jahreslabels
 const yearLabelIndexSet = ref(new Set()) // Indizes in xAxisData, an denen ein neues Jahr beginnt
@@ -113,17 +132,16 @@ function onWindowResize(){
   }
 }
 
-// Variablen-Optionen (ohne Kürzel im Label)
+// Variablen-Optionen (ohne Luftdruck)
 const VARS_BESTAND = [
   { code: 'AT', label: 'Lufttemperatur', icon: 'mdi-thermometer' },
-  { code: 'AP', label: 'Luftdruck', icon: 'mdi-gauge' },
   { code: 'RH', label: 'Relative Luftfeuchtigkeit', icon: 'mdi-water-percent' },
   { code: 'TF', label: 'Bestandsniederschlag', icon: 'mdi-weather-rainy' }
 ]
 const VARS_FREIFL = [
   { code: 'AT', label: 'Lufttemperatur', icon: 'mdi-thermometer' },
-  { code: 'AP', label: 'Luftdruck', icon: 'mdi-gauge' },
   { code: 'RH', label: 'Relative Luftfeuchtigkeit', icon: 'mdi-water-percent' },
+  { code: 'AP', label: 'Luftdruck', icon: 'mdi-gauge' },
   { code: 'PR', label: 'Niederschlag', icon: 'mdi-weather-rainy' },
   { code: 'WS', label: 'Windgeschwindigkeit', icon: 'mdi-weather-windy' },
   { code: 'WD', label: 'Windrichtung', icon: 'mdi-compass' },
@@ -138,6 +156,9 @@ function onToggleVariable(code, checked) {
   if (!checked && selectedVariable.value === code) return
   selectedVariable.value = code
 }
+
+// Für diese Variablen KEINE Min/Max verwenden (auch wenn vorhanden)
+const NO_EXTREMES = new Set(['WD', 'ET', 'PR', 'TF'])
 
 // Farben – Palette + HSL-Abschwächung (stabil je Sensorcode)
 const DEPTH_PALETTE = [
@@ -266,10 +287,20 @@ function computeYAxisBounds() {
   const tick = niceNum(niceRange / (targetTicks - 1), true)
   let niceMin = Math.floor(minV / tick) * tick
   let niceMax = Math.ceil(maxV / tick) * tick
-  // Für Lufttemperatur (AT) negative Werte zulassen; sonst bei Bedarf bei 0 kappen
-  if (selectedVariable.value !== 'AT') {
-    niceMin = Math.max(0, niceMin)
+
+  // Y-Achsenregeln:
+  if (selectedVariable.value === 'AT') {
+    // AT: negative Werte erlaubt → nicht bei 0 kappen
+    if (niceMax === niceMin) niceMax = niceMin + tick
+    return { min: niceMin, max: niceMax }
   }
+  if (selectedVariable.value === 'RH') {
+    // RH: 0..100 %
+    return { min: 0, max: 100 }
+  }
+
+  // Sonst: Minimum nicht unter 0
+  niceMin = Math.max(0, niceMin)
   if (niceMax === niceMin) niceMax = niceMin + tick
   return { min: niceMin, max: niceMax }
 }
@@ -372,10 +403,9 @@ function ensureDefaultSensorSelection() {
 }
 
 // Zeitreihen laden (mit Min/Mean/Max + Band)
-// Band: stack + stackStrategy:'all' damit die Fläche auch im negativen Bereich sichtbar ist.
 async function fetchSeries() {
-  rawSeries.value = []; xAxisData.value = []; seriesData.value = []; yearLabelIndexSet.value = new Set()
-  legendGroupNames.value = []
+  rawSeries.value = []; xAxisData.value = []; seriesData.value = []
+  yearLabelIndexSet.value = new Set(); legendGroupNames.value = []; groupMeta.value = new Map()
 
   if (!selectedPlot.value || !selectedVariable.value || !selectedSensorCodes.value.length) {
     await nextTick(); await ensureChart(); await renderChart(true)
@@ -471,10 +501,17 @@ async function fetchSeries() {
         const dataMax  = dates.map(d => { const v = byDateMax.get(d);  return (v==null || Number.isNaN(v)) ? null : v })
         const dataMin  = dates.map(d => { const v = byDateMin.get(d);  return (v==null || Number.isNaN(v)) ? null : v })
 
-        const hasAnyMin = dataMin.some(v => v!=null)
-        const hasAnyMax = dataMax.some(v => v!=null)
+        let hasAnyMin = dataMin.some(v => v!=null)
+        let hasAnyMax = dataMax.some(v => v!=null)
 
-        // Band (stack-Trick): unsichtbare Baseline (min) + area (max-min); kein Tooltip
+        // Für Variablen ohne Extremwerte global deaktivieren
+        if (NO_EXTREMES.has(selectedVariable.value)) {
+          hasAnyMin = false
+          hasAnyMax = false
+        }
+        groupMeta.value.set(groupName, { hasMin: hasAnyMin, hasMax: hasAnyMax })
+
+        // Band (unsichtbare Baseline + Diff-Fläche)
         if (hasAnyMin && hasAnyMax) {
           const bandStack = `band-${sensorCode}-${inst}`
           const bandColor = withAlpha(colorMeanHex, 1.0)
@@ -482,10 +519,10 @@ async function fetchSeries() {
           // Baseline (min)
           seriesList.push({
             id: `bandbase-${sensorCode}-${inst}`,
-            name: groupName,              // gleicher Name wie Linien -> gruppierte Legende
+            name: groupName,
             type: 'line',
             stack: bandStack,
-            stackStrategy: 'all',         // WICHTIG: auch bei negativen Werten stapeln
+            stackStrategy: 'all', // auch bei negativen Werten
             data: dataMin,
             color: bandColor,
             lineStyle: { width: 0 },
@@ -507,10 +544,10 @@ async function fetchSeries() {
           })
           seriesList.push({
             id: `bandfill-${sensorCode}-${inst}`,
-            name: groupName,              // gleicher Name
+            name: groupName,
             type: 'line',
             stack: bandStack,
-            stackStrategy: 'all',         // WICHTIG
+            stackStrategy: 'all',
             data: bandDiff,
             color: bandColor,
             lineStyle: { width: 0 },
@@ -546,6 +583,7 @@ async function fetchSeries() {
             z: 2
           })
         }
+        // Mean (immer)
         seriesList.push({
           id: `series-${sensorCode}-${inst}-mean`,
           name: groupName,
@@ -586,7 +624,6 @@ async function fetchSeries() {
     }
 
     seriesData.value = seriesList
-    // eindeutige Gruppenreihenfolge für Legende
     legendGroupNames.value = Array.from(new Set(groupNames))
 
     await nextTick()
@@ -699,14 +736,22 @@ async function renderChart(resetZoomOnFirst=false) {
         if (groups.size === 0) return `<strong>${date}</strong><br/>`
         let out=`<strong>${date}</strong><br/>`
         for (const [gn, arrRaw] of groups.entries()) {
-          // Reihenfolge min, mean, max
+          // Reihenfolge max, mean, min
           const arr = arrRaw.slice().sort((a,b)=>{
-            const ak = a.seriesId.endsWith('-min') ? 0 : (a.seriesId.endsWith('-mean') ? 1 : 2)
-            const bk = b.seriesId.endsWith('-min') ? 0 : (b.seriesId.endsWith('-mean') ? 1 : 2)
-            return ak - bk
+            const sKey = (sid)=> sid.endsWith('-max') ? 0 : (sid.endsWith('-mean') ? 1 : 2)
+            return sKey(a.seriesId) - sKey(b.seriesId)
           })
+          // Serien, die global nicht existieren (kein min/max), ausblenden
+          const meta = groupMeta.value.get(gn) || {}
+          const filtered = arr.filter(p=>{
+            const sid = p.seriesId || ''
+            if (sid.endsWith('-min') && !meta.hasMin) return false
+            if (sid.endsWith('-max') && !meta.hasMax) return false
+            return true
+          })
+          if (!filtered.length) continue
           out += `<em>${gn}</em><br/>`
-          arr.forEach(p=>{
+          filtered.forEach(p=>{
             const sid = p.seriesId || ''
             const lab = sid.endsWith('-min') ? 'min' : (sid.endsWith('-max') ? 'max' : 'mean')
             const val=Number(p.value); const u=currentUnit.value?` ${currentUnit.value}`:''
@@ -769,6 +814,9 @@ async function renderChart(resetZoomOnFirst=false) {
 }
 
 // Watches
+watch(selectedLocation, () => {
+  ensurePlotAllowedForLocation()
+})
 watch([selectedPlot, selectedVariable, selectedLocation], async () => {
   savedZoom.value = tryLoadZoom()
   recomputeCodeMaps()        // stabile Farbreferenz je Plot/Variable/Location
@@ -796,6 +844,9 @@ onMounted(async () => {
   screenWidth.value = window.innerWidth
   chartHeight.value = computeChartHeight(screenWidth.value)
 
+  // FF-Start: falls defaultPlot ausgeschlossen ist, auf erstes verfügbares wechseln
+  ensurePlotAllowedForLocation()
+
   await nextTick()
   await ensureChart()
   await renderChart(true)
@@ -818,12 +869,12 @@ defineExpose({ downloadCSV, downloadChartPNG })
 
 <template>
   <div class="mm-page">
-    <!-- Card 1: Nur Plotauswahl -->
+    <!-- Card 1: Nur Plotauswahl (bei F werden 1207/1209 ausgeblendet) -->
     <PlotSelect
-        v-model="selectedPlot"
-        :plots="plotsData"
-        :columns="5"
-        color="green-darken-2"
+      v-model="selectedPlot"
+      :plots="displayedPlots"
+      :columns="5"
+      color="green-darken-2"
     />
 
     <!-- Card 2: Variablen + B/F-Schalter + Sensoren -->
