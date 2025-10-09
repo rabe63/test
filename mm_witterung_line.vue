@@ -478,8 +478,7 @@ async function fetchSeries() {
         if (!sensorRow) continue
 
         const sensorCode = String(sensorRow.sensor_code)
-        const displayIdx = labelIndexMap.get(`${sensorCode}-${inst}`) || 1
-        const groupName = `${sensorCode} (${displayIdx})`
+        const groupName = `${sensorCode} (${inst})`
         groupNames.push(groupName)
 
         const baseColor = codeBaseColorMap.value.get(code) || DEPTH_PALETTE[0]
@@ -813,6 +812,11 @@ async function renderChart(resetZoomOnFirst=false) {
   }
 }
 
+function hasHoehenstufe() {
+  // Prüft, ob mindestens ein Sensorcode einen Unterstrich enthält (z. B. WS_025)
+  return availableSensorCodes.value.some(code => String(code).includes('_'))
+}
+
 // Watches
 watch(selectedLocation, () => {
   ensurePlotAllowedForLocation()
@@ -932,6 +936,9 @@ defineExpose({ downloadCSV, downloadChartPNG })
           <v-card-title class="pb-2 title-row soft-green">
             Sensoren <span style="font-size:0.8em; font-weight:normal;">(Mehrfachauswahl)</span>
             <span v-if="currentUnit" class="muted">Einheit: {{ currentUnit }}</span>
+            <span class="muted" style="font-size: 0.8em; float: right;">
+                Aufbau: {{ hasHoehenstufe() ? 'Sensor_Höhenstufe' : 'Sensor' }} (InstrumentNummer)
+              </span>
           </v-card-title>
 
           <div v-if="availableSensorCodes.length" class="sensors-grid">

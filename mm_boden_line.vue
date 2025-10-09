@@ -144,7 +144,7 @@ const DEPTH_PALETTE = [
 
 // Gewünschte feste Code-Reihenfolge für bekannte Tiefenstufen (weitere folgen danach)
 const DEPTH_CODE_ORDER = [
-  'BF_010', 'BF_020', 'BF_030', 'BF_040', 'BF_060'
+  'WC_010', 'WC_020', 'WC_030', 'WC_040', 'WC_060'
 ]
 
 // HEX <-> HSL
@@ -445,8 +445,7 @@ async function fetchSeries() {
         seenKeys.add(key)
 
         const sensorCode = String(sensorRow.sensor_code)
-        const displayIdx = labelIndexMap.get(`${sensorCode}-${inst}`) || 1
-        const name = `${sensorCode} (${displayIdx})`
+        const name = `${sensorCode} (${inst})`
 
         // Feste Farbzuweisung: Basis pro Code, Variante pro Instrument-Index innerhalb Code
         const base = codeBaseColorMap.value.get(code) || DEPTH_PALETTE[0]
@@ -735,7 +734,7 @@ defineExpose({ downloadCSV, downloadChartPNG })
           <v-card-title class="pb-2 title-row soft-green">
             Sensoren <span style="font-size:0.8em; font-weight:normal;">(Mehrfachauswahl)</span>
             <span v-if="currentUnit" class="muted">Einheit: {{ currentUnit }}</span>
-            <span style="font-size: 0.8em; float: right;">Tiefenstufen: 010 - Sonde in 10cm Tiefe</span>
+            <span class="muted" style="font-size: 0.8em; float: right;">Aufbau: Sensor_Tiefenstufe (InstrumentNummer)</span>
           </v-card-title>
 
           <div v-if="availableSensorCodes.length" class="sensors-grid">
