@@ -637,7 +637,6 @@ onBeforeUnmount(() => {
     <v-card elevation="1" class="mb-3 soft-card">
       <v-card-title class="pb-2 title-row soft-green">
         Dendrometer
-        <span class="muted ml-3">Bitte eine Auswahl</span>
       </v-card-title>
       <v-card-text class="pb-0">
         <div class="kind-row">
