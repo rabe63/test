@@ -44,6 +44,14 @@ function onResize() {
   if (rainChart && rainRef.value) rainChart.resize({ height: chartHeightRain.value, width: rainRef.value.clientWidth })
 }
 
+// Kalender-Layout-Konstanten (auch für visuelle Skala genutzt)
+const CAL_TOP = 60
+const CAL_BOTTOM = 10
+const CAL_LEFT = 64
+const CAL_RIGHT = 86
+const CELL_W = 16
+const CELL_H = 16
+
 // Farbpaletten (kräftiger)
 const DIV_RG = [
   '#67001f','#b2182b','#d6604d','#f4a582','#f7f7f7','#92c5de','#4393c3','#2166ac','#053061'
@@ -228,6 +236,11 @@ function renderHeat() {
   const isInc = metric.value === 'daily_inc'
   const colors = isInc ? DIV_RG : SEQ_BLUE
 
+  // visuelle Skala (visualMap) in der Länge an die Kalenderfläche anpassen:
+  // Länge = Höhe des Charts - (Kalender top + bottom)
+  const vmItemHeight = Math.max(140, chartHeightHeat.value - (CAL_TOP + CAL_BOTTOM))
+  const vmItemWidth = 16
+
   heatChart.setOption({
     backgroundColor: 'transparent',
     title: { text: `Wachstum: ${plotLabel()} · Baum ${selectedTree.value} · ${metricLabel.value}`, left: 'left' },
@@ -248,19 +261,21 @@ function renderHeat() {
       max: range.max,
       orient: 'vertical',
       right: 0,
-      top: 40,
-      bottom: 4,                  // verlängert die Skala über die verfügbare Höhe
+      top: 50,          
+      bottom: CAL_BOTTOM,      // (wir setzen zusätzlich itemHeight, da continuous visualMap sonst fix 140px ist)
+      itemHeight: vmItemHeight,
+      itemWidth: vmItemWidth,
       calculable: true,
       inRange: { color: colors },
       formatter: v => `${Number(v).toFixed(2)}`
     },
     calendar: {
-      top: 60,
-      left: 64,                  // mehr Platz links → Wochentage nicht abgeschnitten
-      right: 86,                 // Platz für visualMap rechts
-      bottom: 10,
+      top: CAL_TOP,
+      left: CAL_LEFT,          // mehr Platz links → Wochentage nicht abgeschnitten
+      right: CAL_RIGHT,        // Platz für visualMap rechts
+      bottom: CAL_BOTTOM,
       range: String(year),
-      cellSize: [16, 16],
+      cellSize: [CELL_W, CELL_H],
       splitLine: { show: false },
       itemStyle: { borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.12)' },
       dayLabel: { firstDay: 1, nameMap: dayNameMap, margin: 10 }, // zusätzlicher Abstand
@@ -571,7 +586,7 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 .tree-select {
-  max-width: 280px; /* gewünschte Begrenzung, sorgt für Umbruch nach "Baum" */
+  max-width: 450px; /* gewünschte Begrenzung, sorgt für Umbruch nach "Baum" */
 }
 .tree-select, .metric-select {
   display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap;
