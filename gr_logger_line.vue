@@ -224,12 +224,12 @@ const kindLabel = computed(() => ({
   'dendro_14':  'Dendro 14 (14-tägig)',
   'dendro_30':  'Dendro 30 (jährlich)'
 }[selectedKind.value] || selectedKind.value))
-const chartTitle = computed(() => `Wachstum – ${kindLabel.value}`)
+const chartTitle = computed(() => `Wachstum: ${plotLabel()} - ${kindLabel.value}`)
 
 // Download
 function plotLabel() {
   const p = plotsData[selectedPlot.value]
-  return p ? `${selectedPlot.value} — ${p.name || ''}` : selectedPlot.value
+  return p ? `${selectedPlot.value} - ${p.name || ''}` : selectedPlot.value
 }
 function downloadName(dat_ext) {
   if (dat_ext==='header') {
