@@ -306,6 +306,23 @@ function renderRain() {
     const v = rainMapForYear.value.get(d)
     return Number.isFinite(v) ? v : 0
   })
+  // Monatsmitte für x-Achsenlabels
+  const monthMidSet = (() => {
+    const map = new Map() // key -> { firstIdx, lastIdx }
+    for (let i = 0; i < dates.length; i++) {
+      const d = new Date(dates[i])
+      const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}`
+      if (!map.has(key)) map.set(key, { first: i, last: i })
+      else map.get(key).last = i
+    }
+    const s = new Set()
+    for (const rng of map.values()) {
+      const mid = Math.floor((rng.first + rng.last) / 2)
+      s.add(mid)
+    }
+    return s
+  })() 
+
   const maxRain = Math.max(0, ...vals)
   const yMaxRounded = Math.max(10, Math.ceil(maxRain / 10) * 10) // volle 10er Schritte
 
@@ -315,20 +332,38 @@ function renderRain() {
     backgroundColor: 'transparent',
     title: { text: `Niederschlag (mm) - ${year}`, left: 'left' },
     tooltip: { trigger: 'axis' },
-    grid: { left: 40, right: 16, top: 28, bottom: 18 }, // kompakt
-    xAxis: {
-      type: 'category',
-      data: dates,
-      axisLabel: {
-        interval: (idx) => new Date(dates[idx]).getUTCDate() === 1, // Monatsanfang
-        formatter: (val) => {
-          const d = new Date(val); const m = d.toLocaleString('de-DE',{month:'short'})
-          return `${m}`
+    grid: { left: 60, right: 76, top: 28, bottom: 40 }, // mehr Platz unten für Labels
+    xAxis: [
+      { // Achse 0: Ticks bleiben am Monatsanfang
+        type: 'category',
+        data: dates,
+        axisLabel: { show: false },
+        axisTick: {
+          alignWithLabel: true,
+          interval: (idx) => new Date(dates[idx]).getUTCDate() === 1
         },
-        fontSize: isMobile ? 9 : 10
+        axisLine: { show: true },
+        position: 'bottom'
       },
-      axisTick: { alignWithLabel: true }
-    },
+      { // Achse 1: Labels in Monatsmitte, ebenfalls unten platzieren
+        type: 'category',
+        data: dates,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+          interval: (idx) => monthMidSet.has(idx),
+          formatter: (val) => {
+            const d = new Date(val)
+            return d.toLocaleString('de-DE', { month: 'short' })
+          },
+          fontSize: isMobile ? 9 : 10,
+          align: 'center',
+          margin: 6
+        },
+        position: 'bottom',
+        offset: 0 // ggf. z.B. 8 oder 12 setzen, um Labels weiter nach außen zu schieben
+      }
+    ],
     yAxis: {
       type: 'value',
       min: 0,
