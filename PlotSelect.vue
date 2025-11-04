@@ -11,10 +11,19 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
+// Aus props.plots (Map-Objekt) eine Liste bauen, die disabled unterstützt.
+// code wird aus p.code oder, falls fehlend, aus dem Key k abgeleitet.
 const plotList = computed(() => {
-  return Object.values(props.plots)
-    .map(p => ({ code: String(p.code || ''), name: p.name || String(p.code || '') }))
-    .sort((a,b) => Number(a.code) - Number(b.code))
+  return Object.entries(props.plots)
+    .map(([k, p]) => {
+      const code = String(p?.code ?? k ?? '')
+      return {
+        code,
+        name: p?.name || code,
+        disabled: Boolean(p?.disabled)
+      }
+    })
+    .sort((a, b) => Number(a.code) - Number(b.code))
 })
 
 const isEmptySelection = computed(() => {
@@ -26,7 +35,11 @@ function isChecked(code) {
   if (props.multiple) return Array.isArray(props.modelValue) && props.modelValue.map(String).includes(String(code))
   return String(props.modelValue) === String(code)
 }
+
 function toggle(code) {
+  // Bei disabled keine Änderung
+  if (plotList.value.find(p => p.code === String(code))?.disabled) return
+
   if (props.multiple) {
     const cur = Array.isArray(props.modelValue) ? props.modelValue.map(String) : []
     const s = new Set(cur)
@@ -55,6 +68,7 @@ function toggle(code) {
           <v-checkbox
             :label="`${p.code} — ${p.name}`"
             :model-value="isChecked(p.code)"
+            :disabled="p.disabled"
             :color="color"
             density="compact"
             hide-details
@@ -75,7 +89,4 @@ function toggle(code) {
 }
 .no-bg { background: none !important; }
 .empty-hint { color: #777; font-weight: 400; font-size: 90%; margin-left: 8px; }
-</style>
-  );
-}
 </style>
