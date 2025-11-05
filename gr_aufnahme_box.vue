@@ -465,7 +465,7 @@ function renderChart() {
   myChart.setOption({
     backgroundColor: 'transparent',
     title: [
-      { left: 'left', text: '5-jährige Totalaufnahme der Bestandsflächen' },
+      { left: 'left', text: '5-jährige Vollaufnahme der Bestandsflächen' },
       { left: 'left', top: 28, text: chartTitle.value, textStyle: { fontSize: 14, fontWeight: 400, color: '#444' } }
     ],
     legend: {
@@ -505,7 +505,7 @@ function downloadName(ext){
       ? (getVisiblePlots().length===1 ? (getVisiblePlots()[0].speciesName || 'HBA') : 'HBA')
       : 'alle'
     return [
-      '# 5-jährige Totalaufnahme der Bestandsflächen',
+      '# 5-jährige Vollaufnahme der Bestandsflächen',
       `# Plots:\t${visible}`,
       `# Erstellt:\t${created} UTC`,
       '# Quelle:\tICP Forest Data des Landesbetrieb Forst Brandenburg',
