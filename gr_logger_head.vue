@@ -7,6 +7,19 @@ import { plotsData } from './data/treeSpeciesData.js'
 const instance = getCurrentInstance()
 const supabase = instance.appContext.config.globalProperties.$supabase
 
+// disable-Liste: Plots, die in der Auswahl deaktiviert angezeigt werden sollen
+const DISABLED_PLOTS = new Set(['1201','1206'])
+
+// Plots für die Auswahl, mit disabled-Flag (von PlotSelect.vue unterstützt)
+const plotsForSelect = computed(() => {
+  return Object.fromEntries(
+    Object.entries(plotsData || {}).map(([k, v]) => [
+      k,
+      { ...(v || {}), code: v?.code ?? k, disabled: DISABLED_PLOTS.has(String(k)) }
+    ])
+  )
+})
+
 // Props
 const props = defineProps({
   schema: { type: String, default: 'public' },
@@ -476,7 +489,7 @@ onBeforeUnmount(() => {
     <!-- Card 1: Plot (kein Card-in-Card) -->
     <PlotSelect
       v-model="selectedPlot"
-      :plots="plotsData"
+      :plots="plotsForSelect"
       :columns="5"
       color="green-darken-2"
       class="mb-3"
