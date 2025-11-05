@@ -576,7 +576,7 @@ function downloadName(ext){
     const hba = Array.isArray(selectedSpecies.value) ? selectedSpecies.value.join(', ') : String(selectedSpecies.value ?? '')
 
     return [
-      '# Proben Nadeln/Blätter – Massen (nach Jahren)',
+      '# Proben Nadeln/Blätter – Trockengewicht (nach Jahren)',
       `# Plots:\t${visible}`,
       `# Erstellt:\t${created} UTC`,
       '# Quelle:\tICP Forest Data des Landesbetrieb Forst Brandenburg',
@@ -585,7 +585,7 @@ function downloadName(ext){
     ].join('\n')
   }
   const ts = new Date().toISOString().substring(0,19).replace(/[:]/g,'-')
-  return `nadeln_blaetter_massen_${ts}.${ext}`
+  return `nadeln_blaetter_trockengewicht_${ts}.${ext}`
 }
 
 function generateCSV() {
