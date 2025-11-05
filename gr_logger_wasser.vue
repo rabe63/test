@@ -22,7 +22,7 @@ const plotsForSelect = computed(() => {
 })
 
 // Zustand
-const selectedPlots = ref(['1203'])         // Mehrfachauswahl möglich (wir begrenzen auf max 2)
+const selectedPlots = ref(['1203'])         // Mehrfachauswahl möglich (intern auf max 2 begrenzt)
 const selectionOrder = ref(['1203'])        // merkt sich die Reihenfolge (ältestes zuerst)
 const windowDays = ref(14)                  // Gleitendes Minimum (Tage)
 const errorMessage = ref('')
@@ -52,6 +52,9 @@ const chartHeight = ref(520)
 const GRID_LEFT = 64
 const GRID_RIGHT = 40
 
+// UI: Help-Dialog state
+const showHelp = ref(false)
+
 // Farben
 const PALETTE = ['#0072B2','#E69F00','#009E73','#D55E00','#CC79A7','#56B4E9','#F0E442','#2C3E50','#1ABC9C','#3D5B2D','#E91E63']
 function colorForPlot(code, idx){ return PALETTE[idx % PALETTE.length] }
@@ -74,7 +77,7 @@ function getVisiblePlots() {
   }))
 }
 
-const chartTitle = computed(()=> 'Wachstum vs. Wasserstatus')
+const chartTitle = computed(()=> 'irrev. Wachstum vs. rev. Stammänderung')
 
 // Hilfsfunktionen
 function mean(xs){ if(!xs.length) return NaN; return xs.reduce((a,b)=>a+b,0)/xs.length }
@@ -187,8 +190,8 @@ async function fetchData() {
 
     // Per-Baum dekomponieren
     computePerTreeSeries()
-    // Initiale Aggregation (aktueller Zoom oder Vollbereich)
-    updateAggregatesForCurrentZoom()
+    // Aggregation über den vollen Zeitraum (kein dataZoom-Einfluss)
+    updateAggregatesForFullRange()
   } catch (e) {
     console.error('[fetchData] error', e)
     errorMessage.value = 'Fehler beim Laden der Daten: ' + (e?.message || e)
@@ -237,64 +240,34 @@ function getGlobalTimeExtent() {
   return { min: minT, max: maxT }
 }
 
-// Aktuelles dataZoom-Fenster (Zeit) als [start,end] in ms
-function getZoomRangeMs() {
-  if (!myChart) return null
-  const opt = myChart.getOption()
-  const dzArr = Array.isArray(opt?.dataZoom) ? opt.dataZoom : []
-  const ext = getGlobalTimeExtent()
-  if (!ext) return null
-  let startPct = 0, endPct = 100
-  for (const z of dzArr) {
-    if (typeof z?.start === 'number') startPct = z.start
-    if (typeof z?.end === 'number') endPct = z.end
-    if (z?.startValue != null || z?.endValue != null) {
-      const sVal = z.startValue != null ? +new Date(z.startValue) : null
-      const eVal = z.endValue   != null ? +new Date(z.endValue)   : null
-      if (Number.isFinite(sVal) && Number.isFinite(eVal)) return { start: sVal, end: eVal }
-    }
-  }
-  const span = ext.max - ext.min
-  const start = ext.min + (startPct/100) * span
-  const end   = ext.min + (endPct/100) * span
-  return { start, end }
-}
-
-// Aggregation pro Plot im aktuellen Zoomfenster
-function updateAggregatesForCurrentZoom() {
-  const zr = getZoomRangeMs()
+// Aggregation pro Plot über den vollen Zeitraum (kein Zoom)
+function updateAggregatesForFullRange() {
   const res = new Map()
   for (const p of getVisiblePlots()) {
     const plot = String(p.code)
     const trees = perTreeSeries.value.get(plot)
     if (!trees) continue
 
-    // Fensterbezogene Zeitreihen je Baum als Map<dateISO, value>
+    // komplette Zeitreihen je Baum als Map<dateISO, value>
     const treeMaps = []
     let unionDates = new Set()
     for (const [tree, s] of trees.entries()) {
       const baseMap = new Map()
       const elaMap  = new Map()
       for (const [t, v] of s.baseline) {
-        const tm = +new Date(t)
-        if (!zr || (tm >= zr.start && tm <= zr.end)) {
-          const iso = new Date(t).toISOString().slice(0,10)
-          baseMap.set(iso, v)
-          unionDates.add(iso)
-        }
+        const iso = new Date(t).toISOString().slice(0,10)
+        baseMap.set(iso, v)
+        unionDates.add(iso)
       }
       for (const [t, v] of s.elastic) {
-        const tm = +new Date(t)
-        if (!zr || (tm >= zr.start && tm <= zr.end)) {
-          const iso = new Date(t).toISOString().slice(0,10)
-          elaMap.set(iso, v)
-          unionDates.add(iso)
-        }
+        const iso = new Date(t).toISOString().slice(0,10)
+        elaMap.set(iso, v)
+        unionDates.add(iso)
       }
       treeMaps.push({ tree, baseMap, elaMap })
     }
 
-    // Coverage je Baum bestimmen
+    // Coverage je Baum bestimmen (voller Zeitraum)
     const unionCount = unionDates.size || 1
     const cohort = treeMaps
       .map(x => {
@@ -303,7 +276,7 @@ function updateAggregatesForCurrentZoom() {
       })
       .filter(x => x.coverage >= COVERAGE_THRESHOLD)
 
-    // Wenn zu wenige Bäume, nimm die Bäume mit bester Coverage bis MIN_COHORT
+    // Wenn zu wenige Bäume, nimm die besten bis MIN_COHORT
     if (cohort.length < MIN_COHORT) {
       const sorted = treeMaps
         .map(x => {
@@ -396,17 +369,17 @@ function buildChartOption() {
     })
   })
 
+  // Fixiere die x-Achse auf den vollen Datenzeitraum
+  const ext = getGlobalTimeExtent()
+  const xMin = ext ? new Date(ext.min) : null
+  const xMax = ext ? new Date(ext.max) : null
+
   return {
     backgroundColor: 'transparent',
-    title: [
-      { left: 'left', top: 28, 
-        text: 'Irreversibles Wachstum (Baseline) und elastische Komponente (Turgor)', 
-        textStyle: { fontSize: 16, fontWeight: 600, color: '#444' } }
-    ],
     legend: {
       top: isMobile ? 56 : 60,
       type: 'scroll',
-      selectedMode: false,        // Legendentoggles deaktivieren (Plot-Auswahl erfolgt über PlotSelect)
+      selectedMode: false,        // Legendentoggles deaktivieren (Plot-Auswahl via PlotSelect)
       icon: 'circle',             // rundes Farbicon
       itemWidth: 12,
       itemHeight: 12,
@@ -433,13 +406,15 @@ function buildChartOption() {
       }
     },
     grid: { left: GRID_LEFT, right: GRID_RIGHT, top: isMobile?96:104, bottom: 72 },
+    // Nur Slider (kein inside) – Zoomen ausschließlich über den Slider
     dataZoom: [
-      { type: 'inside' },
-      { type: 'slider', bottom: 26, height: isMobile?20:26, brushSelect:false, showDetail: false, showDataShadow: true }
+      { type: 'slider', start: 0, end: 100, bottom: 26, height: isMobile?20:26, brushSelect:false, showDetail: false, showDataShadow: true }
     ],
     xAxis: {
       type: 'time',
       boundaryGap: false,
+      min: xMin,
+      max: xMax,
       axisLabel: { fontSize: isMobile?10:12 }
     },
     yAxis: [
@@ -466,12 +441,11 @@ function renderChart() {
   if (!myChart) return
   const opt = buildChartOption()
   myChart.setOption(opt, true, false)
-  wireZoomHandler()
-  // Nach Neu-Render direkt auf vollen Bereich zoomen (v2-Verhalten)
-  resetZoomToFullExtent()
+  // Beim Render auf vollen Zeitraum lassen (Slider: 0–100)
+  setTimeout(() => resetZoomSlider(), 0)
 }
 
-// Nur die Series-Daten aktualisieren (z. B. nach dataZoom)
+// Nur die Series-Daten aktualisieren (z. B. nach Param-Änderung)
 function applySeriesUpdates() {
   if (!myChart) return
   const updates = []
@@ -485,22 +459,19 @@ function applySeriesUpdates() {
   if (updates.length) myChart.setOption({ series: updates }, false, true)
 }
 
-// Größten verfügbaren Zeitraum setzen (wie v2)
-function resetZoomToFullExtent() {
+// Slider auf 0–100 setzen (ohne min/max zu verändern)
+function resetZoomSlider() {
   if (!myChart) return
-  const ext = getGlobalTimeExtent()
-  if (!ext) return
   try {
-    myChart.dispatchAction({ type: 'dataZoom', startValue: new Date(ext.min), endValue: new Date(ext.max) })
-    updateAggregatesForCurrentZoom()
-    applySeriesUpdates()
-  } catch (e) { console.error('resetZoomToFullExtent failed', e) }
+    const dz = myChart.getOption()?.dataZoom || []
+    for (let i = 0; i < dz.length; i++) {
+      myChart.dispatchAction({ type: 'dataZoom', dataZoomIndex: i, start: 0, end: 100, startValue: null, endValue: null })
+    }
+  } catch (e) { console.error('resetZoomSlider failed', e) }
 }
 
 // Expliziter Reset-Button
-function resetZoom() {
-  resetZoomToFullExtent()
-}
+function resetZoom() { resetZoomSlider() }
 
 // CSV/PNG
 function downloadName(ext){
@@ -564,20 +535,6 @@ function downloadChartPNG() {
   } catch (e) { console.error('PNG download error:', e) }
 }
 
-// dataZoom-Handler: dynamische Kohorte + Trimmed Mean
-function wireZoomHandler() {
-  if (!myChart) return
-  myChart.off('dataZoom')
-  myChart.on('dataZoom', () => {
-    try {
-      updateAggregatesForCurrentZoom()
-      applySeriesUpdates()
-    } catch (e) {
-      console.error('[dataZoom] update failed', e)
-    }
-  })
-}
-
 // Auswahl auf max 2 Plots begrenzen, älteste fliegt raus
 function enforceMaxTwo(newVal, oldVal) {
   if (adjustingSelection) return
@@ -612,15 +569,14 @@ watch(selectedPlots, async (nv, ov) => {
   if (adjustingSelection) return
   await fetchData()
   await nextTick(); ensureChart(); renderChart()
-  // Nach Plotwechsel immer auf vollen Zeitraum
-  resetZoomToFullExtent()
+  // Kein Re-Aggregieren auf Zoom – nur Slider zurücksetzen
+  resetZoomSlider()
 })
 watch(windowDays, () => {
-  // Per-Baum neu dekomponieren, Aggregation nach aktuellem Zoom neu berechnen
+  // Per-Baum neu dekomponieren, Aggregation über vollen Zeitraum neu berechnen
   computePerTreeSeries()
-  // Bei Parameterwechsel: auf vollen Zeitraum zurücksetzen
-  resetZoomToFullExtent()
-  nextTick(() => { ensureChart(); applySeriesUpdates() })
+  updateAggregatesForFullRange()
+  nextTick(() => { ensureChart(); applySeriesUpdates(); resetZoomSlider() })
 })
 
 // Lifecycle
@@ -652,9 +608,16 @@ onBeforeUnmount(() => {
     <v-card elevation="1" class="mb-3 soft-card">
       <v-toolbar density="comfortable" color="transparent" flat>
         <div class="toolbar-left">
-          <h2 class="chart-title">Wachstum vs. Wasserstatus</h2>
+          <h2 class="chart-title" style="display:flex; align-items:center; gap:8px">
+            Wachstum vs. Stammelastik (Turgor)
+            <v-tooltip location="top">
+              <template #activator="{ props }">
+                <v-icon v-bind="props" class="help-icon" @click="showHelp = true" style="cursor:pointer">mdi-help-circle-outline</v-icon>
+              </template>
+              <span>Mehr Info anzeigen (klicken)</span>
+            </v-tooltip>
+          </h2>
         </div>
-    
         <div class="toolbar-right">
           <v-btn size="small" variant="elevated tonal" color="secondary"
                  class="mr-2" @click="resetZoom" title="Zoom zurücksetzen">
@@ -666,6 +629,22 @@ onBeforeUnmount(() => {
                  class="ml-2" @click="downloadCSV" title="Daten als CSV exportieren">CSV</v-btn>
         </div>   
       </v-toolbar>
+
+      <!-- Help Dialog -->
+      <v-dialog v-model="showHelp" width="520">
+        <v-card>
+          <v-card-title>Erklärung: Wachstum &amp; Stammelastik</v-card-title>
+          <v-card-text>
+            <p><strong>Irrev. Wachstum (Baseline):</strong> Gleitendes Minimum des Durchmessers – zeigt den dauerhaften, nicht reversiblen Zuwachs.</p>
+            <p><strong>Stammelastik (Turgor-Elastik):</strong> Aktueller Durchmesser minus Baseline – schnelle, reversible Schwankungen durch Wasseraufnahme/-abgabe (Tagesgang).</p>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn variant="text" @click="showHelp = false">Schließen</v-btn>
+         </v-card-actions>
+        </v-card>
+      </v-dialog>
+
 
       <div class="slider-row">
         <div class="slider-inner">
@@ -713,4 +692,6 @@ onBeforeUnmount(() => {
 .slider-label { white-space:nowrap; font-size:1em; color:var(--v-theme-on-surface); }
 .slider-value { white-space:nowrap; font-size:1em; margin-left:6px; color:var(--v-theme-on-surface); text-align:right; }
 .slider-wrap { display: inline-flex; align-items: center; gap: 6px; }
+
+.help-icon { font-size: 1.5rem; color: var(--v-theme-on-surface); }
 </style>
