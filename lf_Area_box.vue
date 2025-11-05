@@ -27,7 +27,7 @@ const selectedSpecies = ref([])
 const metric = ref('mass')
 
 const unitOnly = computed(() => metric.value === 'area' ? 'm²' : 'g')
-const yAxisName = computed(() => metric.value === 'area' ? 'Fläche (m²)' : 'Masse (g)')
+const yAxisName = computed(() => metric.value === 'area' ? 'Fläche (m²)' : 'Trockengewicht (g)')
 const titleMain = 'Streufall (100 Blätter / 1000 Nadeln)'
 
 /* Aggregationsergebnis pro Plot */
@@ -262,7 +262,7 @@ function makeOption() {
           const outsBlock = outs.length ? `<br/>Ausreißer:<br/>${outs.map(v => fmt(v)).join('<br/>')}` : ''
           return `<div style="min-width:240px">
             <strong>${header}</strong><br/>
-            ${metric.value === 'area' ? 'Fläche' : 'Masse'}<br/>
+            ${metric.value === 'area' ? 'Fläche' : 'Trockengewicht'}<br/>
             n: ${e.n}<br/>
             min: ${fmt(min)} ${unitOnly.value}<br/>
             Q1: ${fmt(q1)} ${unitOnly.value}<br/>
@@ -388,7 +388,7 @@ function generateCSV() {
 function downloadName(dat_ext) {
   if (dat_ext === 'header') {
   return '# Streufall (100 Blaetter / 1000 Nadeln)\n' +
-        `# Metrik:\t${metric.value === 'area' ? 'Flaeche (m²)' : 'Masse (g)'}\n` +
+        `# Metrik:\t${metric.value === 'area' ? 'Flaeche (m²)' : 'Trockengewicht (g)'}\n` +
         `# Erstellt:\t${new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC\n` +
         '# Quelle:\tICP Forest Data des Landesbetrieb Forst Brandenburg\n' +
         '# Link:\t\thttps://forstliche-umweltkontrolle.de/dauerbeobachtung/level-ii/\n' +
