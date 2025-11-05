@@ -424,7 +424,7 @@ function renderChart() {
     myChart.setOption({
       backgroundColor:'transparent',
       title:[
-        { left:'left', text:'Streufall Trockenmasse' },
+        { left:'left', text:'Streufall Trockengewicht' },
         { id:'src_left', left:'left', text:'ICP Forest Data des Landesbetrieb Forst Brandenburg', bottom:0, textStyle:{ fontSize:isMobile?10:12, color:'#999' } },
         { id:'src_right', left:'right', text:'forstliche-umweltkontrolle.de', bottom:0, textStyle:{ fontSize:isMobile?10:12, color:'#999' } }
       ],
@@ -474,7 +474,7 @@ function renderChart() {
       xAxis:{ type:'category', data: categories.value.map(c => c.label), axisLabel:{ fontSize:isMobile?9:11, interval:0, lineHeight:14, rotate: xLabelRotate.value, margin:isMobile?10:14 }, axisTick:{ alignWithLabel:true } },
       yAxis:{
         type:'value',
-        name:'Masse (g/m²)',
+        name:'Trockengewicht (g/m²)',
         nameTextStyle:{ fontSize:isMobile?10:12 },
         axisLabel:{ fontSize:isMobile?10:12 },
         splitLine:{ show:true },
@@ -500,7 +500,7 @@ function renderChart() {
 /* CSV Export (gemeinsame Quelle: statsMap, inkl. Einzelwerte n<3) */
 function downloadName(dat_ext) {
   if (dat_ext === 'header') {
-  return '# Streufall Trockenmasse Boxplots (g/m²)\n' +
+  return '# Streufall Trockengewicht Boxplots (g/m²)\n' +
         `# Fraktion:\t${selectedFractionCodes.value.map(c => {
           const m = getFractionMeta(c); return m?.text || c
         }).join(';')}\n` +
@@ -510,7 +510,7 @@ function downloadName(dat_ext) {
         `# HBA:\t\t${selectedSpecies.value.join(', ')}\n`
   } 
   const ts = new Date().toISOString().substring(0,19).replace(/[:]/g,'-')
-  const filename = `streufall_trockenmasse_${ts}.${dat_ext}`
+  const filename = `streufall_trockengewicht_${ts}.${dat_ext}`
   return filename
 }
 
