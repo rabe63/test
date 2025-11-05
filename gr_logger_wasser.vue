@@ -321,7 +321,7 @@ function ensureChart() {
   myChart = echarts.init(chartEl.value)
 }
 
-// Legende: nur pro Plot ein Eintrag (Baseline), runde Icons
+// Legende: pro Plot zwei Einträge (Baseline & Elastik), Klick blendet Serie aus/ein
 function buildChartOption() {
   const isMobile = (chartEl.value?.clientWidth || 800) < 600
   const series = []
@@ -335,9 +335,10 @@ function buildChartOption() {
     const agg = aggregatedByPlot.value.get(code)
     if (!agg) return
 
-    // Ein Legendeneintrag je Plot (Baseline-Namen verwenden, Elastik nicht in legend.data)
     const baseName = `${code} ${name}\nBaseline`
-    legend.push(baseName)
+    const elasName = `${code} ${name}\nElastik`
+
+    legend.push(baseName, elasName)
 
     // Baseline
     series.push({
@@ -347,23 +348,27 @@ function buildChartOption() {
       data: agg.baseline,
       showSymbol: false,
       smooth: 0,
-      lineStyle: { color, width: 2 },
+      lineStyle: { color, width: 2, opacity: 1 },
+      itemStyle: { color },
       symbol: 'circle',
-      emphasis: { focus: 'series' },
+      emphasis: { focus: 'series', lineStyle: { width: 3 } },
+      blur: { lineStyle: { opacity: 0.25 } },
       encode: { x: 0, y: 1 }
     })
 
-    // Elastik (nicht in Legendendaten → kein Eintrag)
+    // Elastik
     series.push({
       id: `elas-${code}`,
-      name: `${code} ${name}\nElastik`,
+      name: elasName,
       type: 'line',
       data: agg.elastic,
       showSymbol: false,
       smooth: 0,
-      lineStyle: { color: withAlpha(color, 0.6), width: 1.5, type: 'dashed' },
+      lineStyle: { color, width: 1.5, type: 'dashed', opacity: 1 }, // gleiche Farbe
+      itemStyle: { color }, 
       symbol: 'circle',
-      emphasis: { focus: 'series' },
+      emphasis: { focus: 'series', lineStyle: { width: 2.2 } },
+      blur: { lineStyle: { opacity: 0.25 } },
       encode: { x: 0, y: 1 },
       yAxisIndex: 1
     })
@@ -379,8 +384,9 @@ function buildChartOption() {
     legend: {
       top: isMobile ? 56 : 60,
       type: 'scroll',
-      selectedMode: false,        // Legendentoggles deaktivieren (Plot-Auswahl via PlotSelect)
-      icon: 'circle',             // rundes Farbicon
+      selectedMode: 'multiple',     // Klick toggelt Serie
+      hoverLink: true,              // Hover hebt Serie hervor
+      icon: 'circle',
       itemWidth: 12,
       itemHeight: 12,
       inactiveColor: '#bbb',
@@ -470,24 +476,23 @@ function resetZoomSlider() {
   } catch (e) { console.error('resetZoomSlider failed', e) }
 }
 
-// Expliziter Reset-Button
-function resetZoom() { resetZoomSlider() }
-
 // CSV/PNG
 function downloadName(ext){
   if(ext==='header'){
     const visible = getVisiblePlots().map(p=>`${p.code} ${p.name}`).join(', ')
     const created = new Date().toISOString().replace('T',' ').substring(0,19)
+
     return [
       '# Wachstum vs. Wasserstatus der Loggerbäume je Bestandsfläche',
       `# Plots:\t${visible}`,
+      `# gl. Min.:\t${windowDays.value} Tage`,
       `# Erstellt:\t${created} UTC`,
       '# Quelle:\tICP Forest Data des Landesbetrieb Forst Brandenburg',
       '# Link:\t\thttps://forstliche-umweltkontrolle.de/dauerbeobachtung/level-ii/'
     ].join('\n')
   }
   const ts = new Date().toISOString().substring(0,19).replace(/[:]/g,'-')
-  return `wasserstatus_${ts}.${ext}`
+  return `stammelastik_${ts}.${ext}`
 }
 function fmtCsv(x){ const n=Number(x); return Number.isFinite(n) ? n.toFixed(3) : '' }
 
@@ -569,7 +574,7 @@ watch(selectedPlots, async (nv, ov) => {
   if (adjustingSelection) return
   await fetchData()
   await nextTick(); ensureChart(); renderChart()
-  // Kein Re-Aggregieren auf Zoom – nur Slider zurücksetzen
+  // Slider wieder auf 0–100
   resetZoomSlider()
 })
 watch(windowDays, () => {
@@ -619,10 +624,6 @@ onBeforeUnmount(() => {
           </h2>
         </div>
         <div class="toolbar-right">
-          <v-btn size="small" variant="elevated tonal" color="secondary"
-                 class="mr-2" @click="resetZoom" title="Zoom zurücksetzen">
-            <v-icon start size="16">mdi-refresh</v-icon> Reset
-          </v-btn>
           <v-btn size="small" variant="elevated tonal" color="primary"
                  @click="downloadChartPNG" title="Chart als PNG speichern">PNG</v-btn>
           <v-btn size="small" variant="elevated tonal" color="primary"
@@ -644,7 +645,6 @@ onBeforeUnmount(() => {
          </v-card-actions>
         </v-card>
       </v-dialog>
-
 
       <div class="slider-row">
         <div class="slider-inner">
