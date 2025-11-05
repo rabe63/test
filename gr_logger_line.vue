@@ -26,6 +26,18 @@ const selectedKind = ref('dendro_log') // 'dendro_log' | 'dendro_14' | 'dendro_3
 const availableTrees = ref([])   // number[]
 const selectedTrees = ref([])    // number[]
 
+// Disable-Liste nur für Logger (dendro_log) aktiv
+const DISABLED_PLOTS = new Set(['1201','1206'])
+const plotsForSelect = computed(() => {
+  const disable = selectedKind.value === 'dendro_log'
+  return Object.fromEntries(
+    Object.entries(plotsData || {}).map(([k, v]) => [
+      k,
+      { ...(v || {}), code: v?.code ?? k, disabled: disable && DISABLED_PLOTS.has(String(k)) }
+    ])
+  )
+})
+
 // Chart/Daten
 let myChart = null
 const chartContainer = ref(null)
@@ -644,14 +656,12 @@ onBeforeUnmount(() => {
 <template>
   <div class="gr-page">
     <!-- Card 1: Bestandsflächen -->
-
     <PlotSelect
       v-model="selectedPlot"
-      :plots="plotsData"
+      :plots="plotsForSelect"
       :columns="5"
       color="green-darken-2"
     />
-
 
     <!-- Card 2: Dendrometer + Bäume -->
     <v-card elevation="1" class="mb-3 soft-card">
