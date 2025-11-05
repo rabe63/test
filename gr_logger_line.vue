@@ -302,11 +302,11 @@ async function fetchTreesForPlot() {
     // Default-Auswahl: erster Baum, wenn nötig
     if (!list.length) {
       selectedTrees.value = []
-    } else if (!selectedTrees.value.length || !list.includes(selectedTrees.value[0])) {
-      selectedTrees.value = [list[0]]
     } else {
-      selectedTrees.value = selectedTrees.value.filter(t => list.includes(t))
-      if (!selectedTrees.value.length) selectedTrees.value = [list[0]]
+      // Falls aktuell keine Auswahl vorhanden oder die bestehende Auswahl ungültig ist,
+      // alle verfügbaren Bäume als Default auswählen.
+      const cur = (selectedTrees.value || []).filter(t => list.includes(t))
+      selectedTrees.value = cur.length ? cur : list.slice()
     }
   } catch (e) {
     console.error('[fetchTreesForPlot] error', e)
@@ -488,43 +488,32 @@ async function renderChart(resetZoomOnFirst=false) {
     legendSelected[name] = Object.prototype.hasOwnProperty.call(prevSelected, name) ? prevSelected[name] : true
   }
 
-  const tooltipFormatter = (params) => {
-    if(!params||!params.length) return ''
-    const date=params[0].axisValueLabel||params[0].axisValue
-    const groups = new Map()
-    params.forEach(p=>{
-      const sid = p.seriesId || ''
-      if (sid.startsWith('bandbase-') || sid.startsWith('bandfill-')) return
-      const num = Number(p.value); if (!Number.isFinite(num)) return
-      const gn = p.seriesName || ''
-      const arr = groups.get(gn) || []
-      arr.push(p); groups.set(gn, arr)
-    })
-    if (!groups.size) return `<strong>${date}</strong><br/>`
-    let out=`<strong>${date}</strong><br/>`
-    for (const [gn, arrRaw] of groups.entries()) {
-      const meta = groupHasMinMax.value.get(Number(gn)) || {}
-      const arr = arrRaw.slice().sort((a,b)=>{
-        const sKey = (sid)=> sid.endsWith('-max') ? 0 : (sid.endsWith('-mean') ? 1 : 2)
-        return sKey(a.seriesId) - sKey(b.seriesId)
-      }).filter(p=>{
-        const sid = p.seriesId || ''
-        if (sid.endsWith('-min') && !meta.hasMin) return false
-        if (sid.endsWith('-max') && !meta.hasMax) return false
-        return true
-      })
-      if (!arr.length) continue
-      out += `<em>Baum ${gn}</em><br/>`
-      arr.forEach(p=>{
-        const sid = p.seriesId || ''
-        const lab = sid.endsWith('-min') ? 'min' : (sid.endsWith('-max') ? 'max' : 'mean')
-        const val=Number(p.value)
-        out += `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background:${p.color}"></span>`
-        out += `${lab}: ${val.toFixed(3)} mm<br/>`
-      })
-    }
-    return out
+const tooltipFormatter = (params) => {
+  if (!params || !params.length) return ''
+  const date = params[0].axisValueLabel || params[0].axisValue
+  const groups = new Map()
+  params.forEach(p => {
+    const sid = p.seriesId || ''
+    if (sid.startsWith('bandbase-') || sid.startsWith('bandfill-')) return
+    const num = Number(p.value); if (!Number.isFinite(num)) return
+    const gn = p.seriesName || ''
+    const arr = groups.get(gn) || []
+    arr.push(p)
+    groups.set(gn, arr)
+  })
+  if (!groups.size) return `<strong>${date}</strong><br/>`
+  let out = `<strong>${date}</strong><br/>`
+  for (const [gn, arr] of groups.entries()) {
+    // nur den mean-Wert anzeigen (falls vorhanden)
+    const meanItem = arr.find(p => (p.seriesId || '').endsWith('-mean')) || arr[0]
+    if (!meanItem) continue
+    const val = Number(meanItem.value)
+    out += `<em>Baum ${gn}</em><br/>`
+    out += `<span style="display:inline-block;margin-right:6px;border-radius:50%;width:8px;height:8px;background:${meanItem.color}"></span>`
+    out += `mean: ${val.toFixed(3)} mm<br/>`
   }
+  return out
+}
 
   const axisLabel = {
     interval: (idx)=> yearStartIndexSet.value.has(idx),
@@ -588,6 +577,7 @@ watch([selectedPlot, selectedKind], async () => {
   await fetchSeries()
   await nextTick(); adjustYAxisNow()
 })
+
 watch(selectedTrees, async (nv, ov) => {
   const prev = new Set(ov || [])
   const next = new Set(nv || [])
@@ -600,6 +590,36 @@ watch(selectedTrees, async (nv, ov) => {
     adjustYAxisNow()
   }
 }, { deep:true })
+
+watch([selectedPlot, selectedKind], async (nv, ov) => {
+  savedZoom.value = tryLoadZoom()
+  const [newPlot, newKind] = nv || []
+  const [oldPlot, oldKind] = ov || []
+  // Bäume neu laden für aktuelle Auswahl
+  await fetchTreesForPlot()
+  // Wenn die Dendrometer-Art gewechselt wurde: standardmäßig ALLE Bäume auswählen
+  if (newKind !== oldKind) {
+    selectedTrees.value = availableTrees.value.slice()
+  } else {
+    // sonst bestehende Auswahl bewahren (aber falls leer, alle setzen)
+    if (!selectedTrees.value.length && availableTrees.value.length) {
+      selectedTrees.value = availableTrees.value.slice()
+    } else {
+      // filtere ungültige Einträge heraus (falls nötig)
+      selectedTrees.value = (selectedTrees.value || []).filter(t => availableTrees.value.includes(t))
+    }
+  }
+  await nextTick(); await ensureChart()
+  await fetchSeries()
+  await nextTick(); adjustYAxisNow()
+})
+
+watch(selectedPlot, async (nv, ov) => {
+  if (nv === ov) return
+  await fetchTreesForPlot()            // lädt availableTrees.value
+  // default: alle verfügbaren Bäume markieren
+  selectedTrees.value = availableTrees.value.slice()
+})
 
 // Lifecycle
 onMounted(async () => {
