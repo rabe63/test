@@ -15,7 +15,8 @@ const props = defineProps({
 })
 
 // Zustand
-const selectedPlots = ref(['1203'])
+//const selectedPlots = ref(['1203'])
+const selectedPlots = ref(Object.keys(plotsData || {}).map(String))
 const speciesMode = ref('ALL')  // 'HBA' | 'ALL'
 const rawRows = ref([])
 const years = ref([])
@@ -612,7 +613,7 @@ onBeforeUnmount(() => {
           <v-checkbox
             :model-value="speciesMode==='HBA'"
             @update:modelValue="v => { if (v) speciesMode='HBA' }"
-            label="HBA"
+            label="Hauptbaumart"
             color="green-darken-2"
             density="compact"
             hide-details
@@ -620,7 +621,7 @@ onBeforeUnmount(() => {
           <v-checkbox
             :model-value="speciesMode==='ALL'"
             @update:modelValue="v => { if (v) speciesMode='ALL' }"
-            label="Alle BA"
+            label="alle Baumarten"
             color="green-darken-2"
             density="compact"
             hide-details
