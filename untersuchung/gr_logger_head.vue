@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import * as echarts from 'echarts'
 import PlotSelect from './PlotSelect.vue'
-import { plotsData } from './data/treeSpeciesData.js'
+import { plotsData } from '../data/treeSpeciesData.js'
 
 const instance = getCurrentInstance()
 const supabase = instance.appContext.config.globalProperties.$supabase
