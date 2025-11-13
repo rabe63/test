@@ -498,7 +498,6 @@ defineExpose({
 </script>
 
 <template>
-  
       <!-- Auswahlbereich -->
       <TreeSpeciesSelect
         v-model="selectedSpecies"
@@ -510,6 +509,7 @@ defineExpose({
       />
 
       <!-- Chartbereich -->
+      <v-card elevation="1" class="mb-3 soft-card">
         <v-toolbar density="comfortable" color="transparent" flat>
           <div class="toolbar-actions">
             <v-btn
@@ -558,16 +558,12 @@ defineExpose({
               Bitte wählen Sie mindestens eine Baumart.
             </v-alert>
           </div>
+      </v-card>
 </template>
 
 <style scoped>
-.v-card.chart-card { box-shadow: var(--v-shadow-1) !important; }
-.toolbar-actions {
-  width: 100%;
-  display: flex;
-  justify-content: flex-end; 
-  align-items: center;
-}
+.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 .empty-state {
   display: flex;
   align-items: center;
@@ -580,8 +576,6 @@ defineExpose({
     rgba(var(--v-theme-primary), 0.08) 0%,
     rgba(var(--v-theme-primary), 0.04) 100%
   );
-  border: 1px solid rgba(var(--v-theme-primary), 0.22);
-  border-radius: 8px;
 }
 
 /* Mobile/Tablet Feinheiten */
