@@ -1,10 +1,12 @@
 # Waldwachstum und Dendrometerüberwachung
 
+**Sprache:** Deutsch | [English](./index.en.md)
+
 **Inhalt**
 
 - [Dendrolog: Heatmap](#dendrolog-heatmap)
 - [Dendrolog: Stammelastik](#dendrolog-stammelastik)
-- [Nach oben ↑](#top)
+
 
 <a id="top"></a>
 
