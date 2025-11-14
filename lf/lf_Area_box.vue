@@ -27,8 +27,8 @@ const selectedSpecies = ref([])
 const metric = ref('mass')
 
 const unitOnly = computed(() => metric.value === 'area' ? 'm²' : 'g')
-const yAxisName = computed(() => metric.value === 'area' ? 'Fläche (m²)' : 'Trockengewicht (g)')
-const titleMain = 'Streufall (100 Blätter / 1000 Nadeln)'
+const yAxisName = computed(() => metric.value === 'area' ? 'Fläche (m²)' : 'Masse (g)')
+const titleMain = 'Masse (100 Blätter / 1000 Nadeln)'
 
 /* Aggregationsergebnis pro Plot */
 let allEntries = [] // [{ code, xLabel, legendLabel, color, n, stats, outliers, singles }]
@@ -388,7 +388,7 @@ function generateCSV() {
 function downloadName(dat_ext) {
   if (dat_ext === 'header') {
   return '# Streufall (100 Blaetter / 1000 Nadeln)\n' +
-        `# Metrik:\t${metric.value === 'area' ? 'Flaeche (m²)' : 'Trockengewicht (g)'}\n` +
+        `# Metrik:\t${metric.value === 'area' ? 'Flaeche (m²)' : 'Masse (g)'}\n` +
         `# Erstellt:\t${new Date().toISOString().replace('T', ' ').substring(0, 19)} UTC\n` +
         '# Quelle:\tICP Forest Data des Landesbetrieb Forst Brandenburg\n' +
         '# Link:\t\thttps://forstliche-umweltkontrolle.de/dauerbeobachtung/level-ii/\n' +
@@ -467,7 +467,7 @@ defineExpose({ refreshData: fetchData, selectedSpecies })
 
   <MetricSelect v-model="metric" class="mb-2" />
 
-  <v-card class="chart-card" elevation="1">
+  <v-card elevation="1" class="mb-3 soft-card">
     <v-toolbar density="comfortable" color="transparent" flat>
       <div class="toolbar-actions">
         <v-btn size="small" variant="elevated tonal" elevation="1" color="primary"
@@ -506,7 +506,8 @@ defineExpose({ refreshData: fetchData, selectedSpecies })
 </template>
 
 <style scoped>
-.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; }
+.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 
 /* Overlay über dem Chart, Container bleibt sichtbar/gerendert */
 .empty-overlay {

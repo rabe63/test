@@ -493,8 +493,6 @@ defineExpose({
 </script>
 
 <template>
-  <v-card class="page-card" elevation="2">
-    <v-card-text>
       <!-- Auswahlbereich -->
       <TreeSpeciesSelect
         v-model="selectedSpecies"
@@ -506,34 +504,32 @@ defineExpose({
       />
 
       <!-- Chartbereich -->
-      
-        <v-toolbar density="comfortable" color="transparent" flat>
-          <div class="toolbar-actions">
-            <v-btn
-              size="small"
-              variant="elevated tonal"
-              color="primary"
-              @click="downloadChartPNG"
-              :disabled="isLoading || !hasSelection"
-              title="Chart als PNG speichern"
-            >
-              PNG
-            </v-btn>
-            <v-btn
-              size="small"
-              variant="elevated tonal"
-              color="primary"
-              @click="downloadCSV"
-              :disabled="!hasSelection || !rawData || !rawData.length"
-              class="ml-2"
-              title="Chartdaten als CSV exportieren"
-            >
-              CSV
-            </v-btn>
-          </div>
-        </v-toolbar>
-
-       
+     <v-card elevation="1" class="mb-3 soft-card"> 
+          <v-toolbar density="comfortable" color="transparent" flat>
+            <div class="toolbar-actions">
+              <v-btn
+                size="small"
+                variant="elevated tonal"
+                color="primary"
+                @click="downloadChartPNG"
+                :disabled="isLoading || !hasSelection"
+                title="Chart als PNG speichern"
+              >
+                PNG
+              </v-btn>
+              <v-btn
+                size="small"
+                variant="elevated tonal"
+                color="primary"
+                @click="downloadCSV"
+                :disabled="!hasSelection || !rawData || !rawData.length"
+                class="ml-2"
+                title="Chartdaten als CSV exportieren"
+              >
+                CSV
+              </v-btn>
+            </div>
+          </v-toolbar>
           <!-- Wenn Auswahl vorhanden: Chart zeigen -->
           <div
             v-if="hasSelection"
@@ -555,7 +551,6 @@ defineExpose({
               Bitte wählen Sie mindestens eine Baumart.
             </v-alert>
           </div>
-        </v-card-text>
       </v-card>
 
       <v-alert
@@ -571,12 +566,8 @@ defineExpose({
 </template>
 
 <style scoped>
-.toolbar-actions {
-  width: 100%;
-  display: flex;
-  justify-content: flex-end; 
-  align-items: center;
-}
+.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 .empty-state {
   display: flex;
   align-items: center;

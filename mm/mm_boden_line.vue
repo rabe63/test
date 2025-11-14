@@ -280,7 +280,13 @@ function computeYAxisBounds() {
   const tick = niceNum(niceRange / (targetTicks - 1), true)
   let niceMin = Math.floor(minV / tick) * tick
   let niceMax = Math.ceil(maxV / tick) * tick
-  niceMin = Math.max(0, niceMin)
+
+  // WICHTIG: Für Bodentemperatur (ST) negative Werte zulassen.
+  // Für WC/MP weiterhin nicht unter 0 skalieren.
+  if (selectedVariable.value !== 'ST') {
+    niceMin = Math.max(0, niceMin)
+  }
+
   if (niceMax === niceMin) niceMax = niceMin + tick
   return { min: niceMin, max: niceMax }
 }
@@ -487,7 +493,9 @@ async function fetchSeries() {
     console.error('[fetchSeries] error', e)
     errorMessage.value = 'Fehler beim Laden der Zeitreihen: ' + (e?.message || e)
     await nextTick(); await ensureChart(); await renderChart(true)
-  } finally { isLoading.value = false }
+  } finally {
+    isLoading.value = false
+  }
 }
 
 // Serie-Hover über Legende für abgewählte Items deaktivieren (minimaler Update, Farben unangetastet)
@@ -797,12 +805,8 @@ defineExpose({ downloadCSV, downloadChartPNG })
   display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 6px 12px; padding-left: 20px;
 }
 .muted { color: #777; font-weight: 400; font-size: 90%; padding-left: 10px;}
-.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; }
-/* Card-Farben (soft green) */
-.soft-card {
-  border: 1px solid rgba(var(--v-theme-primary), 0.22);
-  border-radius: 8px;
-}
+.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 .soft-green {
   background: linear-gradient(180deg, rgba(var(--v-theme-primary), 0.06) 0%, rgba(var(--v-theme-primary), 0.03) 100%);
 }

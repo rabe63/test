@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import * as echarts from 'echarts'
 import PlotSelect from './PlotSelect.vue'
-import { plotsData } from '../data/treeSpeciesData.js'
+import { plotsData } from './data/treeSpeciesData.js'
 
 const instance = getCurrentInstance()
 const supabase = instance.appContext.config.globalProperties.$supabase
@@ -619,10 +619,8 @@ onBeforeUnmount(() => {
 .page { display: flex; flex-direction: column; }
 
 /* Cards */
-.soft-card {
-  border: 1px solid rgba(var(--v-theme-primary), 0.22);
-  border-radius: 8px;
-}
+.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 .soft-green {
   background: linear-gradient(180deg, rgba(var(--v-theme-primary), 0.06) 0%, rgba(var(--v-theme-primary), 0.03) 100%);
 }
@@ -650,9 +648,6 @@ onBeforeUnmount(() => {
 
 /* Years */
 .years-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-
-/* Toolbar */
-.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; }
 
 /* Charts */
 .chart-surface { background: transparent; }

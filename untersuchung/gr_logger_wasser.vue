@@ -425,7 +425,7 @@ function buildChartOption() {
     },
     yAxis: [
       {
-        type: 'value', name: 'Irreversibles Wachstum\nDurchmesser [mm]',
+        type: 'value', name: 'Irreversibles Wachstum\nDurchmesser [cm]',
         nameTextStyle: { fontSize:isMobile?10:12, padding:[0,0,0,10] },
         axisLabel: { fontSize: isMobile?10:12, margin: 8 },
         splitLine: { show: true }
@@ -677,11 +677,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .page { display: flex; flex-direction: column; gap: 12px; }
-.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 8px; }
+.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 .chart-wrap { position: relative; width: 100%; }
 .toolbar-left { display:flex; align-items:center; }
 .toolbar-right { margin-left: auto; display:flex; align-items:center; gap:8px; }
-.toolbar-actions { margin-left: auto; display: flex; align-items: center; }
 
 /* Titel styling */
 .chart-title { margin-left:15px; font-size:1.4rem; font-weight:700; }

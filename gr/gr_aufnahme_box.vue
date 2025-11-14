@@ -658,10 +658,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.page { display: flex; flex-direction: column; gap: 12px; }
-.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 8px; }
+.page { display: flex; flex-direction: column; gap: 12px; }.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 .soft-green { background: linear-gradient(180deg, rgba(var(--v-theme-primary), 0.06) 0%, rgba(var(--v-theme-primary), 0.03) 100%); }
 .mode-row { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
-.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; }
 .chart-wrap { position: relative; width: 100%; }
 </style>

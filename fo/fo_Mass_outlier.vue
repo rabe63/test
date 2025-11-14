@@ -1,67 +1,3 @@
-<template>
-  <TreeSpeciesSelect
-    v-model="selectedSpecies"
-    :select-all-by-default="true"
-    :show-debug="false"
-    :min-selection="0"
-    class="mb-4"
-  />
-
-  <v-card class="chart-card" elevation="1">
-    <v-toolbar density="comfortable" color="transparent" flat>
-      <div class="toolbar-actions">
-        <v-btn
-          size="small"
-          variant="elevated tonal"
-          elevation="1"
-          color="primary"
-          @click="downloadChartPNG"
-          :disabled="isLoading || (selectedSpecies || []).length === 0"
-        >PNG</v-btn>
-        <v-btn
-          size="small"
-          variant="elevated tonal"
-          elevation="1"
-          color="primary"
-          class="ml-2"
-          @click="downloadCSV"
-          :disabled="isLoading || (selectedSpecies || []).length === 0 || !rawData || !rawData.length"
-        >CSV</v-btn>
-      </div>
-    </v-toolbar>
-    <v-divider />
-    <v-card-text>
-      <div :style="{ position: 'relative', width: '100%', height: chartHeight + 'px' }">
-        <div ref="chartContainer" :style="{ width: '100%', height: chartHeight + 'px' }"></div>
-
-        <div
-          v-show="(selectedSpecies || []).length === 0"
-          class="empty-overlay"
-          :style="{ height: chartHeight + 'px' }"
-        >
-          <v-alert variant="plain" color="primary" border="start" elevation="0">
-            Bitte wählen Sie mindestens eine Baumart.
-          </v-alert>
-        </div>
-
-        <v-overlay v-model="isLoading" contained class="align-center justify-center">
-          <v-progress-circular color="primary" indeterminate size="52" />
-        </v-overlay>
-      </div>
-    </v-card-text>
-  </v-card>
-
-  <v-alert
-    v-if="errorMessage"
-    type="error"
-    variant="tonal"
-    class="mt-3"
-    dismissible
-    @click:close="errorMessage = ''"
-  >
-    {{ errorMessage }}
-  </v-alert>
-</template>
 
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount, getCurrentInstance, nextTick } from 'vue'
@@ -576,7 +512,7 @@ function downloadName(ext){
     const hba = Array.isArray(selectedSpecies.value) ? selectedSpecies.value.join(', ') : String(selectedSpecies.value ?? '')
 
     return [
-      '# Proben Nadeln/Blätter – Trockengewicht (nach Jahren)',
+      '# Proben Nadeln/Blätter – Massen (nach Jahren)',
       `# Plots:\t${visible}`,
       `# Erstellt:\t${created} UTC`,
       '# Quelle:\tICP Forest Data des Landesbetrieb Forst Brandenburg',
@@ -585,7 +521,7 @@ function downloadName(ext){
     ].join('\n')
   }
   const ts = new Date().toISOString().substring(0,19).replace(/[:]/g,'-')
-  return `nadeln_blaetter_trockengewicht_${ts}.${ext}`
+  return `nadeln_blaetter_massen_${ts}.${ext}`
 }
 
 function generateCSV() {
@@ -680,8 +616,73 @@ onBeforeUnmount(() => {
 defineExpose({ refreshData: fetchData, selectedSpecies })
 </script>
 
+<template>
+  <TreeSpeciesSelect
+    v-model="selectedSpecies"
+    :select-all-by-default="true"
+    :show-debug="false"
+    :min-selection="0"
+    class="mb-4"
+  />
+
+  <v-card elevation="1" class="mb-3 soft-card">
+    <v-toolbar density="comfortable" color="transparent" flat>
+      <div class="toolbar-actions">
+        <v-btn
+          size="small"
+          variant="elevated tonal"
+          elevation="1"
+          color="primary"
+          @click="downloadChartPNG"
+          :disabled="isLoading || (selectedSpecies || []).length === 0"
+        >PNG</v-btn>
+        <v-btn
+          size="small"
+          variant="elevated tonal"
+          elevation="1"
+          color="primary"
+          class="ml-2"
+          @click="downloadCSV"
+          :disabled="isLoading || (selectedSpecies || []).length === 0 || !rawData || !rawData.length"
+        >CSV</v-btn>
+      </div>
+    </v-toolbar>
+    <v-card-text>
+      <div :style="{ position: 'relative', width: '100%', height: chartHeight + 'px' }">
+        <div ref="chartContainer" :style="{ width: '100%', height: chartHeight + 'px' }"></div>
+
+        <div
+          v-show="(selectedSpecies || []).length === 0"
+          class="empty-overlay"
+          :style="{ height: chartHeight + 'px' }"
+        >
+          <v-alert variant="plain" color="primary" border="start" elevation="0">
+            Bitte wählen Sie mindestens eine Baumart.
+          </v-alert>
+        </div>
+
+        <v-overlay v-model="isLoading" contained class="align-center justify-center">
+          <v-progress-circular color="primary" indeterminate size="52" />
+        </v-overlay>
+      </div>
+    </v-card-text>
+  </v-card>
+
+  <v-alert
+    v-if="errorMessage"
+    type="error"
+    variant="tonal"
+    class="mt-3"
+    dismissible
+    @click:close="errorMessage = ''"
+  >
+    {{ errorMessage }}
+  </v-alert>
+</template>
+
 <style scoped>
-.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; }
+.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 .empty-overlay {
   position: absolute;
   inset: 0;

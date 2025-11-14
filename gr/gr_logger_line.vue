@@ -762,13 +762,9 @@ onBeforeUnmount(() => {
 .trees-grid { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 6px 12px; padding-left: 12px; }
 .legend-dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:8px; }
 
-.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; }
-
 /* Card-Farben (soft green) */
-.soft-card {
-  border: 1px solid rgba(var(--v-theme-primary), 0.22);
-  border-radius: 8px;
-}
+.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 .soft-green {
   background: linear-gradient(180deg, rgba(var(--v-theme-primary), 0.06) 0%, rgba(var(--v-theme-primary), 0.03) 100%);
 }

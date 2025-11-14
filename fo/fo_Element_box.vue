@@ -731,7 +731,7 @@ defineExpose({ refreshData: fetchData, downloadCSV, downloadChartPNG })
     @change="onElementsChanged"
   />
 
-  <v-card class="chart-card" elevation="1">
+  <v-card elevation="1" class="mb-3 soft-card">
     <v-toolbar density="comfortable" color="transparent" flat>
       <div class="toolbar-actions">
         <v-btn size="small" variant="elevated tonal" elevation="1" color="primary" 
@@ -742,7 +742,6 @@ defineExpose({ refreshData: fetchData, downloadCSV, downloadChartPNG })
          class="ml-2" title="Chartdaten als CSV exportieren">CSV</v-btn>
       </div>
     </v-toolbar>
-    <v-divider />
     <v-card-text>
       <div v-if="hasSelection" :style="{ position: 'relative', width: '100%', height: chartHeight + 'px' }">
         <div ref="chartContainer" :style="{ width: '100%', height: chartHeight + 'px' }" />
@@ -764,7 +763,8 @@ defineExpose({ refreshData: fetchData, downloadCSV, downloadChartPNG })
 </template>
 
 <style scoped>
-.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; }
+.soft-card { border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 6px; }
+.toolbar-actions { width: 100%; display: flex; justify-content: flex-end; align-items: center; margin-right: 10px;}
 .empty-state { display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: large; padding: 16px; background: linear-gradient(180deg, rgba(var(--v-theme-primary), 0.08) 0%, rgba(var(--v-theme-primary), 0.04) 100%); border: 1px solid rgba(var(--v-theme-primary), 0.22); border-radius: 8px; }
 @media (max-width: 959px) { .chart-card { margin-bottom: 10px; } .toolbar-actions .v-btn { min-width: 56px; padding: 0 10px; } }
 @media (max-width: 599px) { .toolbar-actions { gap: 6px; } .toolbar-actions .ml-2 { margin-left: 6px !important; } }
