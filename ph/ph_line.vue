@@ -1,21 +1,31 @@
 <script setup>
-// Phänologie – Ereignis Timeline (Line/Points) für code_event Scores
-// Datei: ph/ph_line.vue
-// Verbesserungen gegenüber vorheriger Version:
-//  - PlotSelect import aus './PlotSelect.vue'
-//  - Entfernt zu strikten Filter (.gt auf date_observation) -> vollständige Jahresdaten
-//  - Robust gegen leere year selection
-//  - Korrekte Zuordnung von Datum (Date-Objekt) im Scatter (time axis) zur Vermeidung von Parsingproblemen
-//  - Dynamische X-Achsen-Beschriftung (Intervall abhängig von sichtbarer Zeitspanne) zur Vermeidung überlappender Labels
-//  - Optionaler Aggregationsmodus 'ALL' (gestapelte Anteile + kumulative Linien)
-//  - Verbesserte Tooltip: zeigt Methode (code_method), Score-Label und Plot
-//  - Jitter (±0.18 in Score) für Punkte im Einzelplotmodus, damit mehrere Beobachtungen mit identischem Score nicht exakt übereinander liegen
-//  - CSV/PNG Export
-//  - Farben analog gr_logger_line.vue; diskrete Score-Farbpalette für Austrieb (1..5) u. Blüte (7.x)
-//  - Reaktives Neurendern bei Plot/Event/Jahr
-//  - Automatische Baumliste (distinct tree_number) im Einzelplotmodus
-//  - Leere Datenhinweise
-
+// Neuaufsetzung Phänologie-Chart (Multi-Year Score Timeline)
+// Anforderungen des Nutzers:
+//  - PlotSelect aus './PlotSelect.vue'
+//  - Plots 1201 und 1206 ausgrauen (keine Daten)
+//  - Ereignis-Auswahl (Events 1,2,3,4,6,7,8 – ohne 5)
+//  - Y-Achse = Score (1..5)
+//  - X-Achse: alle Jahre concatenated, aber nur relevante Monate je Event (DataZoom über Gesamtheit)
+//  - Zusätzlich pro Jahr ein aggregierter Onset-Punkt (Beginn des Ereignisses) verbunden als Linie über die Jahre
+//  - Ziel: zeitliche Verschiebung des Phänologie-Beginns über Jahre sichtbar machen
+//  - Start von Grund auf (alte Darstellung verworfen)
+//
+// Umsetzung:
+//  - Scatter: einzelne Beobachtungen (ein Punkt pro Beobachtungstag pro Baum mit Score)
+//  - Onset-Linie: frühestes Datum mit Score >= onsetThreshold (Standard >=2) pro Jahr
+//  - Monate-Filter je Event (EVENT_MONTHS)
+//  - Multi-Year Sequenz: Für jeden Jahrabschnitt nur ausgewählte Monate angefügt (chronologisch)
+//  - DataZoom: horizontales Scrollen über gesamte concatenated timeline
+//  - Tooltip: dd.mm.yy (Score + Baum + Jahr)
+//  - Chips zur (De-)Aktivierung einzelner Jahre (optional) – alle aktiv per Default
+//  - Performance: Datensätze gefiltert nach Monaten serverseitig NICHT (Supabase hat kein month-filter hier) – clientseitige Filterung
+//  - Erweiterbar: Aggregierte Verteilung / Heatmap (TODO-Kommentar)
+//
+// Hinweise / TODO:
+//  - Falls Onset-Definition je Event anders gewünscht (z.B. Blüte Score >=7.1) -> thresholdMap anpassen.
+//  - Für Events mit seltenen Beobachtungen könnte zusätzliche Glättung sinnvoll sein.
+//  - Optionale Darstellung: Anteil Bäume pro Score als gestapelte Fläche (später)
+//
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
 import * as echarts from 'echarts'
 import PlotSelect from './PlotSelect.vue'
@@ -24,29 +34,57 @@ import { plotsData } from './data/treeSpeciesData.js'
 const instance = getCurrentInstance()
 const supabase = instance.appContext.config.globalProperties.$supabase
 
+// Props
 const props = defineProps({
   schema: { type: String, default: 'icp_download' },
   table:  { type: String, default: 'ph_phi' },
   defaultPlot: { type: [String, Number], default: '1203' },
-  defaultEvent: { type: Number, default: 1 }, // 1 = Austrieb
+  defaultEvent: { type: Number, default: 1 },
   themeMode: { type: String, default: 'auto' }
 })
 
-// Auswahl
+// Ereignisse (ohne 5)
 const EVENT_OPTIONS = [
-  { code: 1, label: 'Austrieb (Flushing)' },
-  { code: 7, label: 'Blüte (Flowering)' }
+  { code: 1, label: 'Austrieb' },
+  { code: 2, label: 'Blattverfärbung' },
+  { code: 3, label: 'Blatt-/Nadelfall' },
+  { code: 4, label: 'Blatt/Krone Schaden' },
+  { code: 6, label: 'Johannistrieb' },
+  { code: 7, label: 'Blüte' },
+  { code: 8, label: 'Fruchtbildung' }
 ]
+
+// Monate je Event (nur typische relevante Monate; kann angepasst werden)
+const EVENT_MONTHS = {
+  1: [3,4],          // Austrieb – Mär, Apr (ggf. Mai, hier anpassbar)
+  2: [8,9,10],       // Verfärbung – Sep, Okt, Nov
+  3: [9,10,11],      // Blattfall – Okt, Nov, Dez (Monatsindex+1) -> hier 9=Okt etc. (Achtung: getMonth() 0=Jan)
+  4: [0,1,2,3,4,5,6,7,8,9,10,11], // Schäden – ganzjährig
+  6: [5,6,7],        // Johannistrieb – Jun, Jul, Aug
+  7: [3,4],          // Blüte – Apr, Mai (Index 3=April)
+  8: [6,7,8,9],      // Fruchtbildung – Jul, Aug, Sep, Okt
+}
+// Onset-Threshold je Event (Standard Score >=2; für Blüte optional >=7.1)
+const onsetThresholdMap = {
+  1: 2.0,
+  2: 2.0,
+  3: 2.0,
+  4: 2.0,
+  6: 2.0,
+  7: 7.0,  // Blüte: Score 7.0 = present (oder 7.1 falls differenziert)
+  8: 2.0
+}
+
+// State
 const selectedPlot = ref(String(props.defaultPlot || '1203'))
 const selectedEvent = ref(Number(props.defaultEvent))
-const availableYears = ref([])
-const selectedYear = ref(null)
+const availableYears = ref([])            // alle Jahre mit Beobachtungen
+const activeYears = ref([])               // vom Nutzer aktivierte Jahre (Subset)
+const rawRows = ref([])                   // alle Zeilen für ausgewählten Plot + Event + Jahre
+const plotYearsMap = ref(new Map())       // year -> rows[] (gefiltert nach Monaten)
+const onsetPerYear = ref([])              // { year, dateMs, dateStr } für Onset-Linie
 
-// Daten
-const rawRows = ref([])
-const treeNumbers = ref([])
-
-// Status / Chart
+// UI Status
 let myChart = null
 const chartEl = ref(null)
 const chartHeight = ref(600)
@@ -55,267 +93,287 @@ const isLoading = ref(false)
 const errorMessage = ref('')
 
 // Farben
-const BASE_PALETTE = ['#0072B2','#E69F00','#009E73','#D55E00','#CC79A7','#56B4E9','#F0E442','#2C3E50','#1ABC9C','#3D5B2D','#E91E63']
-function colorForIndex(i){ return BASE_PALETTE[i % BASE_PALETTE.length] }
-const SCORE_COLOR_MAP = new Map([
-  [1.0,'#c6dbef'], [2.0,'#9ecae1'], [3.0,'#6baed6'], [4.0,'#3182bd'], [5.0,'#08519c'],
-  [7.0,'#fdd0a2'], [7.1,'#fdae6b'], [7.2,'#fd8d3c'], [7.3,'#e6550d']
-])
-const SCORE_LABEL = new Map([
-  [1.0,'<1%'], [2.0,'1–33%'], [3.0,'>33–66%'], [4.0,'>66–99%'], [5.0,'100%'],
-  [7.0,'present'], [7.1,'sparse'], [7.2,'moderate'], [7.3,'abundant']
-])
-const METHOD_LABEL = new Map([
-  [1,'Field'], [2,'Camera'], [3,'Field+Camera'], [99,'Unknown']
-])
+const BASE_PALETTE = ['#006D2C','#31A354','#74C476','#A1D99B','#C7E9C0','#FF7F00','#FDB863','#FEE391','#FEC44F','#FE9929','#EC7014']
+function colorForScore(sc){
+  // Scores 1..5 für Haupttypen verwenden Grüntöne, >5 (Blüte optional) Orange
+  if(sc<=5){ return BASE_PALETTE[Math.max(0, sc-1)] }
+  return '#FF9800'
+}
 
-// PlotSelect Daten mit 'ALL'
+// Plots deaktivieren
+const DISABLED_PLOTS = new Set(['1201','1206'])
 const plotsForSelect = computed(() => {
   const obj = {}
-  for (const [k,v] of Object.entries(plotsData||{})) obj[k] = { ...(v||{}), code: v?.code ?? k }
-  obj['ALL'] = { code: 'ALL', name: 'Alle Plots (Aggregation)' }
+  for (const [k,v] of Object.entries(plotsData||{})) {
+    const code = v?.code ?? k
+    obj[code] = { ...(v||{}), code, disabled: DISABLED_PLOTS.has(String(code)) }
+  }
   return obj
 })
-const isAggregateAll = computed(() => selectedPlot.value === 'ALL')
 
-// Responsive Höhe
-function computeChartHeight(w){ if (w<600) return 420; if (w<960) return 520; return 600 }
-function onResize(){ screenWidth.value = window.innerWidth; chartHeight.value = computeChartHeight(screenWidth.value); if(myChart && chartEl.value) myChart.resize({ height: chartHeight.value, width: chartEl.value.clientWidth }) }
+const isDark = computed(() => {
+  if (props.themeMode === 'dark') return true
+  if (props.themeMode === 'light') return false
+  try { return window.matchMedia('(prefers-color-scheme: dark)').matches } catch { return false }
+})
 
-// Jahre laden
-async function fetchYears() {
-  availableYears.value=[]; selectedYear.value=null
+function computeChartHeight(w){ if (w<600) return 480; if (w<960) return 560; return 620 }
+function onResize(){ screenWidth.value=window.innerWidth; chartHeight.value=computeChartHeight(screenWidth.value); if(myChart && chartEl.value) myChart.resize({ height: chartHeight.value }) }
+
+// Jahre laden (distinct survey_year)
+async function fetchYears(){
+  availableYears.value=[]; activeYears.value=[]
+  if(!selectedPlot.value) return
   try {
-    const q = supabase
+    const { data, error } = await supabase
       .schema(props.schema)
       .from(props.table)
       .select('survey_year')
       .eq('code_event', selectedEvent.value)
+      .eq('code_plot', Number(selectedPlot.value))
       .not('survey_year','is','null')
-      .limit(40000)
-    if(!isAggregateAll.value) q.eq('code_plot', Number(selectedPlot.value))
-    const { data, error } = await q
+      .order('survey_year',{ ascending:true })
+      .limit(50000)
     if(error) throw error
-    const set = new Set()
-    for(const r of (data||[])) if(r?.survey_year!=null) set.add(Number(r.survey_year))
-    const list = Array.from(set).sort((a,b)=>a-b)
-    availableYears.value = list
-    selectedYear.value = list.length ? list[list.length-1] : null
+    const set = new Set(); for(const r of (data||[])) if(r?.survey_year!=null) set.add(Number(r.survey_year))
+    const yrs = Array.from(set).sort((a,b)=>a-b)
+    availableYears.value = yrs
+    activeYears.value = yrs.slice() // alle aktiv
   } catch(e){ console.error('[fetchYears]', e) }
 }
 
-// Daten laden
+// Daten laden für aktive Jahre (ein Request pro Jahr -> ggf. optimieren; hier zusammen)
 async function fetchRows(){
-  rawRows.value=[]; treeNumbers.value=[]
-  if(selectedYear.value==null) return
+  rawRows.value=[]; plotYearsMap.value = new Map(); onsetPerYear.value=[]; errorMessage.value=''
+  if(!activeYears.value.length) return
   try {
-    isLoading.value=true; errorMessage.value=''
-    const q = supabase
+    isLoading.value=true
+    const { data, error } = await supabase
       .schema(props.schema)
       .from(props.table)
-      .select('code_plot,tree_number,date_observation,code_event,code_event_score,code_method')
+      .select('code_plot,tree_number,date_observation,code_event,code_event_score,code_method,survey_year')
       .eq('code_event', selectedEvent.value)
-      .eq('survey_year', Number(selectedYear.value))
-      .order('tree_number',{ascending:true})
-      .order('date_observation',{ascending:true})
-      .limit(50000)
-    if(!isAggregateAll.value) q.eq('code_plot', Number(selectedPlot.value))
-    const { data, error } = await q
+      .eq('code_plot', Number(selectedPlot.value))
+      .in('survey_year', activeYears.value)
+      .order('survey_year',{ ascending:true })
+      .order('date_observation',{ ascending:true })
+      .order('tree_number',{ ascending:true })
+      .limit(100000)
     if(error) throw error
-    rawRows.value = (data||[]).filter(r=> r?.date_observation && r?.tree_number!=null && r?.code_event_score!=null)
-    if(!isAggregateAll.value){
-      const set = new Set(); for(const r of rawRows.value) set.add(Number(r.tree_number))
-      treeNumbers.value = Array.from(set).sort((a,b)=>a-b)
+    rawRows.value = (data||[]).filter(r=> r?.date_observation && r?.code_event_score!=null && r?.survey_year!=null)
+    if(!rawRows.value.length){ errorMessage.value='Keine Beobachtungen für Auswahl.' }
+    // Gruppieren nach Jahr + Monatsfilter
+    const monthsAllowed = EVENT_MONTHS[selectedEvent.value] || [0,1,2,3,4,5,6,7,8,9,10,11]
+    const onsetThreshold = onsetThresholdMap[selectedEvent.value] ?? 2.0
+    const onsetCandidates = []
+    const byYear = new Map()
+    for(const r of rawRows.value){
+      const y = Number(r.survey_year)
+      const dt = new Date(r.date_observation + 'T00:00:00Z')
+      const m = dt.getMonth()
+      if(!monthsAllowed.includes(m)) continue
+      const arr = byYear.get(y)||[]
+      arr.push({ ...r, dateObj: dt })
+      byYear.set(y, arr)
     }
+    // Sort innerhalb Jahr & Onset bestimmen
+    for(const [year, rows] of byYear.entries()){ 
+      rows.sort((a,b)=> a.dateObj - b.dateObj)
+      // Onset: erster Tag Score >= threshold
+      const onsetRow = rows.find(r => Number(r.code_event_score) >= onsetThreshold)
+      if(onsetRow){
+        onsetCandidates.push({ year, dateObj: onsetRow.dateObj, dateMs: onsetRow.dateObj.getTime(), dateStr: onsetRow.dateObj.toISOString().slice(0,10) })
+      }
+    }
+    plotYearsMap.value = byYear
+    onsetPerYear.value = onsetCandidates.sort((a,b)=> a.year - b.year)
   } catch(e){ console.error('[fetchRows]', e); errorMessage.value='Fehler beim Laden der Daten.' }
   finally { isLoading.value=false }
 }
 
-// Einzelplot Scatter-Daten (mit Jitter für Score Stapelung vermeiden?) wir wollen Score nicht auf Y sondern Baum -> Jitter auf X minimal
-const scatterData = computed(()=>{
-  if(isAggregateAll.value) return []
-  const out=[]
-  for(const r of rawRows.value){
-    const tree = Number(r.tree_number)
-    if(!treeNumbers.value.includes(tree)) continue
-    // Value Format: [timestamp, tree]
-    const dateObj = new Date(r.date_observation + 'T00:00:00Z')
-    const jitterMillis = (Math.random()-0.5)*3600*1000 // ±0.5h jitter
-    out.push({
-      value: [dateObj.getTime()+jitterMillis, tree],
-      score: Number(r.code_event_score),
-      method: Number(r.code_method),
-      plot: r.code_plot
-    })
+// Daten für Chart (scatter + onset line)
+const concatenatedScatter = computed(()=> {
+  // x-Werte = echte Zeitstempel; keine künstliche Umskalierung nötig – DataZoom deckt ab
+  const out = []
+  for(const [year, rows] of plotYearsMap.value.entries()){
+    for(const r of rows){
+      out.push({
+        value: [r.dateObj.getTime(), Number(r.code_event_score)],
+        tree: r.tree_number,
+        year,
+        method: r.code_method
+      })
+    }
   }
-  return out
+  return out.sort((a,b)=> a.value[0]-b.value[0])
 })
 
-// Aggregation für ALL
-const aggregatedSeries = computed(()=>{
-  if(!isAggregateAll.value) return { dates:[], sortedScores:[], byScore:new Map(), cumulative:[] }
-  const byDate = new Map()
-  for(const r of rawRows.value){
-    const d = String(r.date_observation)
-    const arr = byDate.get(d)||[]; arr.push(Number(r.code_event_score)); byDate.set(d,arr)
-  }
-  const dates = Array.from(byDate.keys()).sort((a,b)=>new Date(a)-new Date(b))
-  const setScores = new Set(); for(const arr of byDate.values()) arr.forEach(s=>setScores.add(s))
-  const sortedScores = Array.from(setScores).sort((a,b)=>a-b)
-  const byScore = new Map()
-  for(const s of sortedScores){
-    byScore.set(s, dates.map(d=>{ const arr=byDate.get(d)||[]; const n=arr.length||1; return arr.filter(x=>x===s).length/n }))
-  }
-  const thresholds = [2,3,5]
-  const cumulative = thresholds.map(th=>({ th, data: dates.map(d=>{ const arr=byDate.get(d)||[]; if(!arr.length) return 0; return arr.filter(x=>x>=th && x<=5).length/arr.length }) }))
-  return { dates, sortedScores, byScore, cumulative }
-})
+const onsetLineSeries = computed(()=> onsetPerYear.value.map(o => ({ value: [o.dateMs, 1.05], year: o.year, date: o.dateStr })))
+// y=1.05 (leicht unter Score 1) => Wir verschieben später Y-Achse range etwas (>0.8..5.2), Linie klar sichtbar. Alternativ auf eigener Achse möglich.
 
-// Tooltip
-function formatTooltip(params){
-  if(!params||!params.length) return ''
-  if(isAggregateAll.value){
-    const date = params[0].axisValueLabel || params[0].axisValue
-    let out = `<strong>${date}</strong><br/>`
-    for(const p of params.filter(p=>p.seriesType==='bar')) out += `Score ${p.seriesName}: ${(p.value*100).toFixed(1)}%<br/>`
-    for(const p of params.filter(p=>p.seriesType==='line')) out += `≥${p.seriesName}: ${(p.value*100).toFixed(1)}%<br/>`
-    return out
-  }
-  const date = new Date(params[0].value[0]).toLocaleDateString('de-DE',{ day:'2-digit', month:'2-digit', year:'numeric'})
-  let out = `<strong>${date}</strong><br/>`
-  for(const p of params){
-    const sc = p.data?.score
-    if(sc==null) continue
-    const lab = SCORE_LABEL.get(sc) || sc
-    const method = METHOD_LABEL.get(p.data?.method) || p.data?.method
-    out += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:6px"></span>` +
-           `Baum ${p.data.value[1]}: Score ${sc} (${lab})` + (method?` · ${method}`:'') + '<br/>'
-  }
-  return out
-}
+// Achsen & Formatting
+function formatDateMs(ms){ return new Date(ms).toLocaleDateString('de-DE',{ day:'2-digit', month:'2-digit', year:'2-digit'}) }
 
-// Achsen-Label Intervall (Zeit)
-function buildDateAxisLabelFormatter(dates){
-  return (val)=> new Date(val).toLocaleDateString('de-DE',{ day:'2-digit', month:'2-digit'})
-}
+function buildChartOption(){
+  const isMobile = screenWidth.value < 640
+  const scatter = concatenatedScatter.value
+  const onset = onsetLineSeries.value
+  const monthsAllowed = EVENT_MONTHS[selectedEvent.value] || []
 
-function buildSinglePlotOption(){
-  const trees = treeNumbers.value
-  const points = scatterData.value
-  const isMobile = screenWidth.value < 600
-  // Symbolgröße
-  const sizeBase = trees.length <= 40 ? 14 : trees.length <= 80 ? 10 : 7
+  // Dynamische X-Achsen Labels: nur Monatswechsel anzeigen
+  const labelFormatter = (val)=> {
+    const d = new Date(val)
+    return d.toLocaleDateString('de-DE',{ month:'short' }) + ' ' + String(d.getFullYear()).slice(-2)
+  }
+  const monthStartSet = new Set()
+  scatter.forEach(pt=> { const d = new Date(pt.value[0]); const key = `${d.getFullYear()}-${d.getMonth()}`; if(!monthStartSet.has(key)){ monthStartSet.add(key) } })
+
   return {
     backgroundColor:'transparent',
-    title:[
-      { left:'left', top:8, text:`Phänologie: ${plotsData[selectedPlot.value]?.name ? `${selectedPlot.value} - ${plotsData[selectedPlot.value].name}`:selectedPlot.value} · ${EVENT_OPTIONS.find(e=>e.code===selectedEvent.value)?.label} · ${selectedYear.value}` },
-      { left:'left', bottom:0, text:'ICP Forest Data des Landesbetrieb Forst Brandenburg', textStyle:{ fontSize:isMobile?10:12, color:'#999'} },
-      { left:'right', bottom:0, text:'forstliche-umweltkontrolle.de', textStyle:{ fontSize:isMobile?10:12, color:'#999'} }
+    title:{ text:`Phänologie – ${EVENT_OPTIONS.find(e=>e.code===selectedEvent.value)?.label || selectedEvent.value} · Plot ${selectedPlot.value}`, left:'left', top:8 },
+    tooltip:{
+      trigger:'item',
+      formatter: params => {
+        if(!params?.data) return ''
+        const dms = params.data.value[0]
+        const dateStr = formatDateMs(dms)
+        if(params.seriesType==='line'){
+          return `<strong>${dateStr}</strong><br/>Onset (Jahr ${params.data.year})` 
+        }
+        const sc = params.data.value[1]
+        return `<strong>${dateStr}</strong><br/>Score: ${sc.toFixed(1)}<br/>Baum: ${params.data.tree}<br/>Jahr: ${params.data.year}`
+      }
+    },
+    grid:{ left:isMobile?50:70, right:isMobile?30:40, top:isMobile?120:140, bottom:80 },
+    dataZoom:[
+      { type:'inside', xAxisIndex:0, filterMode:'none' },
+      { type:'slider', xAxisIndex:0, bottom:25, height:isMobile?22:26, filterMode:'none' }
     ],
-    tooltip:{ trigger:'axis', axisPointer:{ type:'cross' }, formatter: formatTooltip, confine:true },
-    grid:{ left:isMobile?40:64, right:isMobile?30:64, top:isMobile?140:160, bottom:84 },
-    xAxis:{ type:'time', axisLabel:{ formatter: buildDateAxisLabelFormatter() } },
-    yAxis:{ type:'category', data: trees, name:'Baum', nameTextStyle:{ fontSize:isMobile?10:12, padding:[0,0,0,30] }, axisLabel:{ fontSize: trees.length>60?10:(isMobile?10:12) } },
-    dataZoom:[ { type:'inside', start:0,end:100 }, { type:'slider', bottom:22, height:isMobile?20:26, start:0,end:100, brushSelect:false, showDataShadow:true, backgroundColor:'transparent', showDetail:false } ],
-    series:[{
-      name:'Events', type:'scatter', encode:{x:0,y:1},
-      data: points.map(pt=>({ value: pt.value, score: pt.score, method: pt.method })),
-      symbolSize:(val,p)=>{ const sc=p.data.score; const base=sizeBase; return sc>=4?base+4: sc>=3? base+2: base },
-      itemStyle:{ color:(p)=> SCORE_COLOR_MAP.get(p.data.score) || '#666' }
-    }]
+    xAxis:{
+      type:'time',
+      axisLabel:{ formatter: labelFormatter },
+      min: scatter.length? scatter[0].value[0] : null,
+      max: scatter.length? scatter[scatter.length-1].value[0] : null,
+      splitLine:{ show:false }
+    },
+    yAxis:{
+      type:'value',
+      min:0.8, max:5.2,
+      interval:1,
+      axisLabel:{ formatter:v=> [1,2,3,4,5].includes(Math.round(v))? Math.round(v): '' },
+      name:'Score', nameTextStyle:{ padding:[0,0,0,40] },
+      splitLine:{ show:true }
+    },
+    legend:{ top: isMobile?70:80, data:['Beobachtungen','Onset'], selected:{ 'Beobachtungen': true, 'Onset': true } },
+    series:[
+      {
+        name:'Beobachtungen', type:'scatter', symbol:'circle',
+        data: scatter.map(p => ({ ...p })),
+        symbolSize:(val)=> {
+          // Score höher -> größerer Punkt
+          const sc = val[1]; return sc>=4? 14: sc>=3? 11: 9
+        },
+        itemStyle:{ color:(params)=> colorForScore(params.data.value[1]) },
+        opacity:0.9
+      },
+      {
+        name:'Onset', type:'line', showSymbol:true, symbol:'diamond', symbolSize:14,
+        data: onset,
+        lineStyle:{ width:2.5, color:'#000', type:'solid' },
+        itemStyle:{ color:'#000' },
+        tooltip:{ show:true }
+      }
+    ]
   }
 }
 
-function buildAggregateOption(){
-  const agg = aggregatedSeries.value
-  const dates = agg.dates
-  const isMobile = screenWidth.value < 600
-  if(!dates.length) return { title:{ text:'Keine Daten' } }
-  const scoreBars=[]; let idx=0
-  for(const s of agg.sortedScores){
-    scoreBars.push({ name:String(s), type:'bar', stack:'scores', data:agg.byScore.get(s), itemStyle:{ color: SCORE_COLOR_MAP.get(s) || colorForIndex(idx) }, emphasis:{ focus:'series' } })
-    idx++
-  }
-  const lines = agg.cumulative.map(c=>({ name:String(c.th), type:'line', data:c.data, yAxisIndex:0, showSymbol:false, lineStyle:{ width:2, type:c.th===5?'solid':'dashed', color:'#000' } }))
-  return {
-    backgroundColor:'transparent',
-    title:[
-      { left:'left', top:8, text:`Phänologie Aggregation · ${EVENT_OPTIONS.find(e=>e.code===selectedEvent.value)?.label} · ${selectedYear.value}` },
-      { left:'left', bottom:0, text:'ICP Forest Data des Landesbetrieb Forst Brandenburg', textStyle:{ fontSize:isMobile?10:12, color:'#999'} },
-      { left:'right', bottom:0, text:'forstliche-umweltkontrolle.de', textStyle:{ fontSize:isMobile?10:12, color:'#999'} }
-    ],
-    tooltip:{ trigger:'axis', axisPointer:{ type:'shadow' }, formatter: formatTooltip, confine:true },
-    legend:{ top:isMobile?72:84, type:'scroll', textStyle:{ fontSize:isMobile?10:12 }, data:[ ...agg.sortedScores.map(String), ...agg.cumulative.map(c=>`≥${c.th}`) ] },
-    grid:{ left:isMobile?40:64, right:isMobile?30:64, top:isMobile?140:160, bottom:84 },
-    xAxis:{ type:'category', data:dates, axisLabel:{ formatter:(val)=> new Date(val).toLocaleDateString('de-DE',{ day:'2-digit', month:'2-digit'}) } },
-    yAxis:[{ type:'value', min:0, max:1, axisLabel:{ formatter:(v)=> (v*100).toFixed(0)+'%' }, name:'Anteil Bäume', nameTextStyle:{ fontSize:isMobile?10:12, padding:[0,0,0,40]} }],
-    dataZoom:[ { type:'inside', start:0,end:100 }, { type:'slider', bottom:22, height:isMobile?20:26, start:0,end:100, brushSelect:false, showDataShadow:true, backgroundColor:'transparent', showDetail:false } ],
-    series:[...scoreBars, ...lines]
-  }
+function ensureChart(){ if(!chartEl.value) return; if(!myChart){ myChart = echarts.init(chartEl.value) } }
+function renderChart(){ if(!myChart) return; myChart.setOption(buildChartOption(), true) }
+
+// Downloads
+function downloadName(ext){ const ts=new Date().toISOString().substring(0,19).replace(/[:]/g,'-'); return `ph_multi_${selectedPlot.value}_${selectedEvent.value}_${ts}.${ext}` }
+function generateCSV(){
+  const rows=['date,year,tree,score,plot,event']
+  concatenatedScatter.value.forEach(r=>{
+    rows.push(`${new Date(r.value[0]).toISOString().slice(0,10)},${r.year},${r.tree},${r.value[1]},${selectedPlot.value},${selectedEvent.value}`)
+  })
+  onsetPerYear.value.forEach(o=>{
+    rows.push(`${o.dateStr},${o.year},ONSET,THRESHOLD>=${onsetThresholdMap[selectedEvent.value]},${selectedPlot.value},${selectedEvent.value}`)
+  })
+  return rows.join('\n')
 }
-
-function ensureChart(){ if(!chartEl.value || myChart) return; myChart = echarts.init(chartEl.value) }
-function renderChart(){ if(!myChart) return; const opt = isAggregateAll.value? buildAggregateOption(): buildSinglePlotOption(); myChart.setOption(opt, true) }
-
-// Export
-function downloadName(ext){ const ts=new Date().toISOString().substring(0,19).replace(/[:]/g,'-'); const plotPart=isAggregateAll.value?'ALL':selectedPlot.value; return `ph_line_${plotPart}_${selectedEvent.value}_${selectedYear.value}_${ts}.${ext}` }
-function generateCSV(){ if(!rawRows.value.length) return ''; const header=[ '# Phänologie Ereignis-Timeline', `# Plot:\t${isAggregateAll.value?'ALL (Aggregation)':selectedPlot.value}`, `# Event:\t${selectedEvent.value}`, `# Jahr:\t${selectedYear.value}`, `# Erstellt:\t${new Date().toISOString().replace('T',' ').substring(0,19)} UTC`, '# Quelle:\tICP Forest Data des Landesbetrieb Forst Brandenburg', '# Link:\thttps://forstliche-umweltkontrolle.de/dauerbeobachtung/level-ii/' ].join('\n'); const rows=['date_observation,plot,tree_number,code_event,code_event_score,code_method']; for(const r of rawRows.value){ rows.push([r.date_observation,r.code_plot,r.tree_number,r.code_event,r.code_event_score,r.code_method].join(',')) } return header+'\n\n'+rows.join('\n') }
-function downloadCSV(){ const csv=generateCSV(); if(!csv){ errorMessage.value='Keine Daten'; return } const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); const url=URL.createObjectURL(blob); a.href=url; a.download=downloadName('csv'); document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url) }
-function downloadPNG(){ if(!myChart) return; try{ const url=myChart.getDataURL({type:'png',pixelRatio:2,backgroundColor:'#fff'}); const a=document.createElement('a'); a.href=url; a.download=downloadName('png'); document.body.appendChild(a); a.click(); document.body.removeChild(a) } catch(e){ console.error('PNG export', e) } }
+function downloadCSV(){ const csv=generateCSV(); const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}); const a=document.createElement('a'); const url=URL.createObjectURL(blob); a.href=url; a.download=downloadName('csv'); document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url) }
+function downloadPNG(){ if(!myChart) return; const url=myChart.getDataURL({type:'png',pixelRatio:2,backgroundColor:'#fff'}); const a=document.createElement('a'); a.href=url; a.download=downloadName('png'); document.body.appendChild(a); a.click(); document.body.removeChild(a) }
 
 // Watches
-watch([selectedPlot, selectedEvent], async ()=>{ await fetchYears(); await fetchRows(); await nextTick(); ensureChart(); renderChart() })
-watch(selectedYear, async ()=>{ await fetchRows(); await nextTick(); ensureChart(); renderChart() })
+watch([selectedPlot, selectedEvent], async () => {
+  await fetchYears(); await fetchRows(); await nextTick(); ensureChart(); renderChart()
+})
+watch(activeYears, async () => { await fetchRows(); await nextTick(); ensureChart(); renderChart() }, { deep:true })
 
-// Lifecycle
-onMounted(async ()=>{ window.addEventListener('resize', onResize, { passive:true }); screenWidth.value=window.innerWidth; chartHeight.value=computeChartHeight(screenWidth.value); await fetchYears(); await fetchRows(); await nextTick(); ensureChart(); renderChart() })
+onMounted(async () => {
+  window.addEventListener('resize', onResize, { passive:true })
+  screenWidth.value = window.innerWidth
+  chartHeight.value = computeChartHeight(screenWidth.value)
+  await fetchYears(); await fetchRows(); await nextTick(); ensureChart(); renderChart()
+})
 onBeforeUnmount(()=>{ window.removeEventListener('resize', onResize); if(myChart){ myChart.dispose(); myChart=null } })
 </script>
 
 <template>
-  <div class="ph-line-page">
+  <div class="ph-multi-page">
     <PlotSelect
       v-model="selectedPlot"
       :plots="plotsForSelect"
       :columns="6"
       color="green-darken-2"
       :multiple="false"
-      title="Bestandsflächen / Aggregation"
+      title="Bestandsflächen"
     />
 
     <v-card elevation="1" class="mb-3 soft-card">
-      <v-card-title class="pb-2 title-row soft-green">Ereignis & Jahr</v-card-title>
+      <v-card-title class="pb-2 title-row soft-green">Ereignis</v-card-title>
       <v-card-text>
-        <div class="controls-row">
-          <div class="event-select">
-            <div class="label">Event</div>
-            <div class="event-options">
-              <v-checkbox
-                v-for="ev in EVENT_OPTIONS"
-                :key="ev.code"
-                :label="ev.label"
-                :model-value="selectedEvent===ev.code"
-                color="green-darken-2" density="compact" hide-details
-                @update:modelValue="val=>{ if(val) selectedEvent = ev.code }"
-              />
-            </div>
-          </div>
-          <div class="year-select" v-if="availableYears.length">
-            <div class="label">Jahr</div>
-            <v-chip-group v-model="selectedYear" column mandatory>
-              <v-chip v-for="y in availableYears" :key="y" :value="y" size="small" variant="elevated" color="primary" class="mr-2">{{ y }}</v-chip>
-            </v-chip-group>
-          </div>
-          <div v-else class="muted">Keine Jahresdaten.</div>
+        <div class="events-row">
+          <v-checkbox
+            v-for="ev in EVENT_OPTIONS"
+            :key="ev.code"
+            :label="ev.label"
+            :model-value="selectedEvent===ev.code"
+            color="green-darken-2"
+            density="compact"
+            hide-details
+            @update:modelValue="val=>{ if(val) selectedEvent=ev.code }"
+          />
         </div>
+      </v-card-text>
+    </v-card>
+
+    <v-card elevation="1" class="mb-3 soft-card" v-if="availableYears.length">
+      <v-card-title class="pb-2 title-row soft-green">Jahre</v-card-title>
+      <v-card-text>
+        <div class="years-row">
+          <v-chip-group v-model="activeYears" multiple>
+            <v-chip
+              v-for="y in availableYears"
+              :key="y"
+              :value="y"
+              size="small"
+              variant="elevated"
+              color="primary"
+              class="mr-2"
+            >{{ y }}</v-chip>
+          </v-chip-group>
+        </div>
+        <div class="muted" v-if="!activeYears.length">Keine Jahre aktiv – bitte mindestens eins wählen.</div>
       </v-card-text>
     </v-card>
 
     <v-card elevation="1" class="mb-3 soft-card">
       <v-toolbar density="comfortable" color="transparent" flat>
         <div class="toolbar-actions">
-          <v-btn size="small" variant="elevated tonal" color="primary" :disabled="!rawRows.length" @click="downloadPNG">PNG</v-btn>
-          <v-btn size="small" variant="elevated tonal" color="primary" :disabled="!rawRows.length" class="ml-2" @click="downloadCSV">CSV</v-btn>
+          <v-btn size="small" variant="elevated tonal" color="primary" :disabled="!concatenatedScatter.length" @click="downloadPNG">PNG</v-btn>
+          <v-btn size="small" variant="elevated tonal" color="primary" :disabled="!concatenatedScatter.length" class="ml-2" @click="downloadCSV">CSV</v-btn>
         </div>
       </v-toolbar>
       <v-card-text>
@@ -326,20 +384,19 @@ onBeforeUnmount(()=>{ window.removeEventListener('resize', onResize); if(myChart
           </v-overlay>
         </div>
         <v-alert v-if="errorMessage" type="error" variant="tonal" class="mt-3" dismissible @click:close="errorMessage=''">{{ errorMessage }}</v-alert>
-        <v-alert v-if="!isLoading && !rawRows.length" type="info" variant="tonal" class="mt-3">Keine Daten für Auswahl.</v-alert>
+        <v-alert v-if="!isLoading && !concatenatedScatter.length" type="info" variant="tonal" class="mt-3">Keine Daten für Auswahl / Monate.</v-alert>
       </v-card-text>
     </v-card>
   </div>
 </template>
 
 <style scoped>
-.ph-line-page { display:flex; flex-direction:column; }
-.controls-row { display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
-event-options { display:flex; gap:8px 16px; flex-wrap:wrap; }
-.label { font-weight:600; margin-bottom:4px; }
-.muted { color:#777; font-size:0.85rem; }
+.ph-multi-page { display:flex; flex-direction:column; }
+.events-row { display:flex; gap:8px 16px; flex-wrap:wrap; }
+.years-row { display:flex; flex-wrap:wrap; }
+.muted { color:#777; font-size:0.85rem; margin-top:8px; }
 .soft-card { border:1px solid rgba(var(--v-theme-primary),0.22); border-radius:6px; }
 .soft-green { background:linear-gradient(180deg, rgba(var(--v-theme-primary),0.06) 0%, rgba(var(--v-theme-primary),0.03) 100%); }
 .toolbar-actions { width:100%; display:flex; justify-content:flex-end; }
-@media (max-width:959px){ .controls-row { flex-direction:column; } }
+@media (max-width:959px){ .events-row { flex-direction:column; } }
 </style>
